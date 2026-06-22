@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CODEX_NODE="${HOME}/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node"
+
+if command -v node >/dev/null 2>&1; then
+  NODE_BIN="$(command -v node)"
+elif [[ -x "${CODEX_NODE}" ]]; then
+  NODE_BIN="${CODEX_NODE}"
+else
+  echo "winver needs Node.js 18+." >&2
+  echo "Install Node, or run this from a Codex environment with the bundled runtime." >&2
+  exit 127
+fi
+
+exec "${NODE_BIN}" "${ROOT}/bin/winver.js" "$@"
+

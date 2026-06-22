@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  node:
+    name: Node checks
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run syntax
+      - run: npm test
+      - run: npm run secret-scan
+
+  powershell:
+    name: Windows PowerShell checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pester
+        shell: pwsh
+        run: |
+          Install-Module Pester -Force -Scope CurrentUser -SkipPublisherCheck
+      - name: Run Pester
+        shell: pwsh
+        run: |
+          Invoke-Pester -Path .\windows\tests -CI
