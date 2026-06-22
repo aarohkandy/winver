@@ -11,4 +11,5 @@ winver.local.json
 *.pem
 id_*
 !*.example
-
+admin.key
+*.recovery.txt

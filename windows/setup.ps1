@@ -6,6 +6,7 @@ param(
 
   [string]$AllowedUser = $env:USERNAME,
   [string]$RepoPath = (Join-Path $env:USERPROFILE 'winver'),
+  [string]$AdminKey = '',
   [switch]$EnableAutoUpdate,
   [switch]$SkipFirewall,
   [switch]$DryRun
@@ -141,6 +142,12 @@ Invoke-Winver "Setting plugged-in server mode" {
   powercfg /change standby-timeout-ac 0 | Out-Null
   powercfg /change hibernate-timeout-ac 0 | Out-Null
   powercfg /change monitor-timeout-ac 10 | Out-Null
+}
+
+if ($AdminKey) {
+  Invoke-Winver "Initializing admin signing key" {
+    & (Join-Path $RepoPath 'windows\admin\init-admin.ps1') -AdminKey $AdminKey
+  }
 }
 
 if ($EnableAutoUpdate) {

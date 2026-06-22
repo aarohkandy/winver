@@ -1,0 +1,13 @@
+{
+  "tagOwners": {
+    "tag:winver-server": ["autogroup:admin"],
+    "tag:winver-client": ["autogroup:admin"]
+  },
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["tag:winver-client"],
+      "dst": ["tag:winver-server:22"]
+    }
+  ]
+}

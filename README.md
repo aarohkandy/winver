@@ -20,6 +20,9 @@ winver start "npm run build"
 winver logs
 winver control status
 winver server-mode
+winver admin status
+winver admin server-profile --dry-run
+winver uefi inventory
 ```
 
 The Mac stays pleasant. The Surface can get warm, slow, busy, and useful.
@@ -37,10 +40,18 @@ Do not expose SSH on your router. This project assumes SSH is reachable through 
 From this repo on the Mac:
 
 ```sh
-./mac/setup-mac.sh
+  ./mac/setup-mac.sh
 ```
 
 This creates a dedicated SSH key at `~/.ssh/winver_ed25519`, writes a marked SSH config block for `Host winver`, and prints the public key you will paste into the Windows setup.
+
+For deep admin controls, also run:
+
+```sh
+./mac/setup-admin-key.sh
+```
+
+This creates a second local key at `~/.winver/admin.key`. It signs apply-level admin requests. The key is not committed.
 
 ### 3. Clone this repo on the Surface
 
@@ -70,6 +81,12 @@ The setup script:
 - sets plugged-in server-style power behavior
 - creates the worker folders
 
+To initialize deep admin controls during setup, add:
+
+```powershell
+-AdminKey "PASTE_THE_ADMIN_KEY_FROM_THE_MAC"
+```
+
 ### 5. Check from the Mac
 
 ```sh
@@ -86,6 +103,8 @@ On the Surface, the local helper is:
 .\windows\winver.ps1 start "npm run build"
 .\windows\winver.ps1 logs latest
 .\windows\winver.ps1 server-mode
+.\windows\winver.ps1 admin status
+.\windows\winver.ps1 uefi inventory
 ```
 
 ## Daily use
@@ -137,6 +156,30 @@ winver control reboot
 ```
 
 Fan control is not enabled by default because Surface fan control is not exposed through a safe, stable Windows API. The control script does expose thermal readings when Windows reports them, power mode controls, reboot/shutdown, service status, and worker process visibility.
+
+### Deep admin controls
+
+```sh
+winver admin status
+winver admin server-profile --dry-run
+winver admin server-profile --apply
+winver admin rollback --dry-run
+winver admin export-recovery --apply
+winver admin break-glass --apply
+```
+
+Apply-level admin actions require the separate admin signing key. They write audit logs and snapshots under `%ProgramData%\winver`.
+
+### Surface UEFI / SEMM
+
+```sh
+winver uefi inventory
+winver uefi plan
+```
+
+UEFI/SEMM commands inventory and plan only. Firmware enrollment, lock changes, and SEMM confirmation still require physical presence at the Surface.
+
+More detail lives in [docs/deep-control.md](docs/deep-control.md).
 
 ## Optional auto-update
 

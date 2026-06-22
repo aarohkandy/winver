@@ -1,0 +1,75 @@
+# Deep Control Mode
+
+Deep Control Mode gives `winver` more control without making every remote login equally dangerous.
+
+## Control tiers
+
+1. Worker tier: normal `winver run`, `start`, `logs`, and `codex`.
+2. Admin tier: signed, audited Windows controls through `winver admin`.
+3. UEFI tier: inventory and planning only; firmware enrollment still requires physical presence.
+
+## First-time admin setup
+
+On the Mac:
+
+```sh
+./mac/setup-admin-key.sh
+```
+
+On the Surface, in an elevated PowerShell window:
+
+```powershell
+.\windows\admin\init-admin.ps1 -AdminKey "PASTE_THE_KEY_FROM_THE_MAC"
+```
+
+You can also pass `-AdminKey` to `windows\setup.ps1` during first setup.
+
+## Commands
+
+```sh
+winver admin status
+winver admin power
+winver admin services
+winver admin bitlocker
+winver admin tpm
+winver admin server-profile --dry-run
+winver admin server-profile --apply
+winver admin rollback --dry-run
+winver admin rollback --apply
+winver admin export-recovery --apply
+winver admin break-glass --apply
+winver uefi inventory
+winver uefi plan
+```
+
+`admin-shell` exists for explicit raw control, but requires both `--apply` and `--force`:
+
+```sh
+winver admin-shell --apply --force "Get-Service sshd"
+```
+
+## What gets logged
+
+Admin actions write JSON-lines audit events under:
+
+```text
+%ProgramData%\winver\audit\admin.jsonl
+```
+
+Apply-level actions also write snapshots and rollback helpers under:
+
+```text
+%ProgramData%\winver\snapshots
+```
+
+## UEFI / SEMM
+
+`winver uefi` does not write firmware settings. It inventories the Surface and writes a SEMM/Surface IT Toolkit checklist.
+
+SEMM enrollment or UEFI lock changes must be done while physically present at the Surface. The Microsoft flow requires certificate-based SEMM packages and physical confirmation during enrollment.
+
+## Tailscale hardening
+
+Use `docs/tailscale-acl-example.json` as a starting point for allowing only a tagged Mac/client to reach the tagged Surface on port 22. This project uses Windows OpenSSH over Tailscale, not Tailscale SSH on Windows.
+
+Tailnet Lock is worth enabling once the workflow is stable because it makes device admission harder to spoof or silently alter.

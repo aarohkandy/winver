@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "node --test",
-    "syntax": "node --check bin/winver.js && node --check lib/cli.js && node --check lib/config.js && node --check lib/remote.js && node --check lib/ui.js && node --check scripts/secret-scan.js",
+    "syntax": "node --check bin/winver.js && node --check lib/admin.js && node --check lib/cli.js && node --check lib/config.js && node --check lib/remote.js && node --check lib/ui.js && node --check scripts/secret-scan.js",
     "secret-scan": "node scripts/secret-scan.js",
     "check": "npm run syntax && npm run secret-scan && npm test"
   },
