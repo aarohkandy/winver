@@ -38,8 +38,15 @@ test("admin-shell requires explicit apply and force", () => {
 
 test("dangerous apply actions need signatures", () => {
   assert.equal(needsApplySignature("server-profile", "Apply"), true);
+  assert.equal(needsApplySignature("lockdown", "Apply"), true);
+  assert.equal(needsApplySignature("unlock", "Apply"), true);
   assert.equal(needsApplySignature("server-profile", "DryRun"), false);
   assert.equal(needsApplySignature("status", "Apply"), false);
+});
+
+test("admin parser accepts lockdown and unlock", () => {
+  assert.equal(parseAdminArgs(["lockdown", "--dry-run"]).action, "lockdown");
+  assert.equal(parseAdminArgs(["unlock", "--apply"]).mode, "Apply");
 });
 
 test("signature payload and hmac are stable", () => {

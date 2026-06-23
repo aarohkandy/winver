@@ -7,11 +7,15 @@ Describe 'winver admin policy' {
   It 'allows only known actions' {
     Test-WinverAdminAction -Action 'status' | Should -BeTrue
     Test-WinverAdminAction -Action 'server-profile' | Should -BeTrue
+    Test-WinverAdminAction -Action 'lockdown' | Should -BeTrue
+    Test-WinverAdminAction -Action 'unlock' | Should -BeTrue
     Test-WinverAdminAction -Action 'format-c' | Should -BeFalse
   }
 
   It 'marks dangerous actions separately' {
     Test-WinverDangerousAction -Action 'server-profile' | Should -BeTrue
+    Test-WinverDangerousAction -Action 'lockdown' | Should -BeTrue
+    Test-WinverDangerousAction -Action 'unlock' | Should -BeTrue
     Test-WinverDangerousAction -Action 'status' | Should -BeFalse
   }
 

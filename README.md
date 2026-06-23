@@ -22,6 +22,7 @@ winver control status
 winver server-mode
 winver admin status
 winver admin server-profile --dry-run
+winver admin lockdown --dry-run
 winver uefi inventory
 ```
 
@@ -163,12 +164,17 @@ Fan control is not enabled by default because Surface fan control is not exposed
 winver admin status
 winver admin server-profile --dry-run
 winver admin server-profile --apply
+winver admin lockdown --dry-run
+winver admin lockdown --apply
+winver admin unlock --apply
 winver admin rollback --dry-run
 winver admin export-recovery --apply
 winver admin break-glass --apply
 ```
 
 Apply-level admin actions require the separate admin signing key. They write audit logs and snapshots under `%ProgramData%\winver`.
+
+`lockdown` is the hotter plugged-in server mode: no AC sleep, fast display-off, high-performance AC profile, processor min/max at 100 percent on AC, active cooling preference where Windows exposes it, and SSH/Tailscale kept ready. `unlock` brings it back toward normal plugged-in laptop behavior while leaving remote access available.
 
 ### Surface UEFI / SEMM
 

@@ -10,6 +10,8 @@ $script:WinverAdminActions = @(
   'battery',
   'thermal',
   'server-profile',
+  'lockdown',
+  'unlock',
   'rollback',
   'export-recovery',
   'break-glass',
@@ -20,6 +22,8 @@ $script:WinverAdminActions = @(
 
 $script:WinverDangerousActions = @(
   'server-profile',
+  'lockdown',
+  'unlock',
   'rollback',
   'export-recovery',
   'break-glass',
@@ -98,4 +102,3 @@ function Test-WinverHmacSignature {
   $expected = New-WinverHmacSignature -Key $Key -Payload $Payload
   $expected.Equals($Signature.ToLowerInvariant(), [StringComparison]::OrdinalIgnoreCase)
 }
-

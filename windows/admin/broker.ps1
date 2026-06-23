@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('status', 'power', 'services', 'updates', 'defender', 'firewall', 'bitlocker', 'tpm', 'battery', 'thermal', 'server-profile', 'rollback', 'export-recovery', 'break-glass', 'reboot', 'shutdown', 'admin-shell')]
+  [ValidateSet('status', 'power', 'services', 'updates', 'defender', 'firewall', 'bitlocker', 'tpm', 'battery', 'thermal', 'server-profile', 'lockdown', 'unlock', 'rollback', 'export-recovery', 'break-glass', 'reboot', 'shutdown', 'admin-shell')]
   [string]$Action = 'status',
 
   [ValidateSet('DryRun', 'Apply')]
@@ -182,6 +182,41 @@ function Show-ServerProfilePlan {
   } | Format-List
 }
 
+function Show-LockdownPlan {
+  [pscustomobject]@{
+    mode = $Mode
+    changes = @(
+      'snapshot current state and generate rollback helper',
+      'disable plugged-in sleep and hibernate timeouts',
+      'turn display off quickly while plugged in',
+      'activate high-performance power profile',
+      'set AC processor min/max to 100 percent',
+      'prefer active cooling on AC when the setting exists',
+      'allow wake timers on AC',
+      'ignore lid close on AC',
+      'auto-start and start sshd/Tailscale',
+      'disable AutoAdminLogon',
+      'set broad daytime Windows Update active hours'
+    )
+    heat = 'Designed for plugged-in compute. Hardware thermal throttling still protects the Surface.'
+    undo = 'Use winver admin unlock --apply for normal laptop-ish behavior, or winver admin rollback --apply for the latest snapshot rollback helper.'
+  } | Format-List
+}
+
+function Show-UnlockPlan {
+  [pscustomobject]@{
+    mode = $Mode
+    changes = @(
+      'snapshot current state',
+      'restore balanced power plan',
+      'restore plugged-in display timeout to 10 minutes',
+      'restore plugged-in sleep timeout to 30 minutes',
+      'allow normal processor scaling on AC',
+      'keep sshd/Tailscale available for convenience'
+    )
+  } | Format-List
+}
+
 function Apply-ServerProfile {
   Assert-Admin
   Assert-BitLockerPrepared
@@ -214,6 +249,76 @@ function Apply-ServerProfile {
   Write-Host "Snapshot: $($paths.snapshot)"
   Write-Host "Rollback: $($paths.rollback)"
   Write-Audit -Result 'applied' -Detail $paths
+}
+
+function Apply-Lockdown {
+  Assert-Admin
+  Assert-BitLockerPrepared
+  $paths = New-WinverSnapshot -Reason 'lockdown'
+
+  powercfg /setactive SCHEME_MIN | Out-Null
+  powercfg /change standby-timeout-ac 0 | Out-Null
+  powercfg /change hibernate-timeout-ac 0 | Out-Null
+  powercfg /change monitor-timeout-ac 1 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP STANDBYIDLE 0 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP HIBERNATEIDLE 0 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP HYBRIDSLEEP 0 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP RTCWAKE 1 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_VIDEO VIDEOIDLE 60 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN 100 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR SYSCOOLPOL 1 | Out-Null
+  powercfg /setactive SCHEME_CURRENT | Out-Null
+
+  Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue
+  Start-Service -Name sshd -ErrorAction SilentlyContinue
+  Set-Service -Name Tailscale -StartupType Automatic -ErrorAction SilentlyContinue
+  Start-Service -Name Tailscale -ErrorAction SilentlyContinue
+
+  $winlogon = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+  if (Test-Path $winlogon) {
+    Set-ItemProperty -Path $winlogon -Name AutoAdminLogon -Value '0' -ErrorAction SilentlyContinue
+  }
+
+  $updateUx = 'HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings'
+  if (Test-Path $updateUx) {
+    Set-ItemProperty -Path $updateUx -Name ActiveHoursStart -Value 7 -Type DWord -ErrorAction SilentlyContinue
+    Set-ItemProperty -Path $updateUx -Name ActiveHoursEnd -Value 23 -Type DWord -ErrorAction SilentlyContinue
+  }
+
+  Write-Host "Lockdown mode applied. The Surface is now biased toward plugged-in server use." -ForegroundColor Green
+  Write-Host "Snapshot: $($paths.snapshot)"
+  Write-Host "Rollback: $($paths.rollback)"
+  Write-Host "To make it friendly for direct use again: winver admin unlock --apply"
+  Write-Audit -Result 'lockdown-applied' -Detail $paths
+}
+
+function Apply-Unlock {
+  Assert-Admin
+  $paths = New-WinverSnapshot -Reason 'unlock'
+
+  powercfg /setactive SCHEME_BALANCED | Out-Null
+  powercfg /change standby-timeout-ac 30 | Out-Null
+  powercfg /change hibernate-timeout-ac 0 | Out-Null
+  powercfg /change monitor-timeout-ac 10 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP STANDBYIDLE 1800 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP HIBERNATEIDLE 0 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP HYBRIDSLEEP 0 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP RTCWAKE 1 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 1 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_VIDEO VIDEOIDLE 600 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN 5 | Out-Null
+  powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100 | Out-Null
+  powercfg /setactive SCHEME_CURRENT | Out-Null
+
+  Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue
+  Set-Service -Name Tailscale -StartupType Automatic -ErrorAction SilentlyContinue
+
+  Write-Host "Unlock mode applied. The Surface is back to a more normal plugged-in laptop profile." -ForegroundColor Green
+  Write-Host "Snapshot: $($paths.snapshot)"
+  Write-Host "Rollback: $($paths.rollback)"
+  Write-Audit -Result 'unlock-applied' -Detail $paths
 }
 
 function Apply-Rollback {
@@ -270,6 +375,8 @@ try {
     'battery' { Invoke-Safe { Get-CimInstance Win32_Battery } '(battery unavailable)' | Format-List; Write-Audit -Result 'read-battery' }
     'thermal' { Invoke-Safe { Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature } '(thermal sensors unavailable)' | Format-List; Write-Audit -Result 'read-thermal' }
     'server-profile' { if ($Mode -eq 'Apply') { Apply-ServerProfile } else { Show-ServerProfilePlan; Write-Audit -Result 'dry-run-server-profile' } }
+    'lockdown' { if ($Mode -eq 'Apply') { Apply-Lockdown } else { Show-LockdownPlan; Write-Audit -Result 'dry-run-lockdown' } }
+    'unlock' { if ($Mode -eq 'Apply') { Apply-Unlock } else { Show-UnlockPlan; Write-Audit -Result 'dry-run-unlock' } }
     'rollback' { if ($Mode -eq 'Apply') { Apply-Rollback } else { Get-ChildItem -Path $snapshotRoot -Filter '*.rollback.ps1' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 5; Write-Audit -Result 'dry-run-rollback' } }
     'export-recovery' { if ($Mode -eq 'Apply') { Apply-ExportRecovery } else { Write-Host "Would export BitLocker recovery data to $recoveryRoot and lock it to Administrators/SYSTEM."; Write-Audit -Result 'dry-run-export-recovery' } }
     'break-glass' { if ($Mode -eq 'Apply') { Apply-BreakGlass } else { Write-Host "Would disable sshd, remove WinverAutoUpdate, and disable the winver SSH firewall rule."; Write-Audit -Result 'dry-run-break-glass' } }

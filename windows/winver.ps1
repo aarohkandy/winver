@@ -25,6 +25,8 @@ Usage:
   .\windows\winver.ps1 server-mode
   .\windows\winver.ps1 admin status
   .\windows\winver.ps1 admin server-profile --dry-run
+  .\windows\winver.ps1 admin lockdown --dry-run
+  .\windows\winver.ps1 admin unlock --dry-run
   .\windows\winver.ps1 uefi inventory
 
 Run setup from an elevated PowerShell window:

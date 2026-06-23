@@ -34,6 +34,9 @@ winver admin bitlocker
 winver admin tpm
 winver admin server-profile --dry-run
 winver admin server-profile --apply
+winver admin lockdown --dry-run
+winver admin lockdown --apply
+winver admin unlock --apply
 winver admin rollback --dry-run
 winver admin rollback --apply
 winver admin export-recovery --apply
@@ -61,6 +64,27 @@ Apply-level actions also write snapshots and rollback helpers under:
 ```text
 %ProgramData%\winver\snapshots
 ```
+
+## Lockdown mode
+
+`lockdown` is the spicy server mode:
+
+- no plugged-in sleep
+- display turns off quickly
+- high-performance AC profile
+- AC processor min/max set to 100 percent
+- active cooling preferred where Windows exposes the setting
+- wake timers allowed
+- lid close ignored while plugged in
+- sshd and Tailscale kept automatic and started
+
+Use it when the Surface is plugged in, ventilated, and doing worker-box things. Use `unlock` when you want to use it directly again:
+
+```sh
+winver admin unlock --apply
+```
+
+Hardware thermal throttling still applies. This does not override firmware thermal protection or touch fan curves.
 
 ## UEFI / SEMM
 
