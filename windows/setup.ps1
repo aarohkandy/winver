@@ -61,14 +61,14 @@ function Set-SshdConfigValue {
   $pattern = "^\s*#?\s*$([regex]::Escape($Key))\s+"
   $replacement = "$Key $Value"
   $found = $false
-  $updatedGlobal = foreach ($line in $globalLines) {
+  $updatedGlobal = @(foreach ($line in $globalLines) {
     if ($line -match $pattern) {
       $found = $true
       $replacement
     } else {
       $line
     }
-  }
+  })
   if (-not $found) { $updatedGlobal += $replacement }
   $updated = @($updatedGlobal) + @($matchLines)
   Set-Content -Path $Path -Value $updated -Encoding ascii
