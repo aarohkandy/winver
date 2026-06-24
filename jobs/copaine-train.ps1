@@ -1,28 +1,42 @@
 [CmdletBinding()]
 param(
+  [Parameter(Position = 0)]
   [ValidateSet('main')]
   [string]$Branch = 'main',
 
+  [Parameter(Position = 1)]
   [ValidateSet('light', 'medium', 'heavy')]
   [string]$Preset = 'medium',
 
+  [Parameter(Position = 2)]
+  [ValidateSet('train', 'preflight')]
+  [string]$Mode = 'train',
+
+  [Parameter(Position = 3)]
   [string]$DatasetDir = '',
+
+  [Parameter(Position = 4)]
+  [ValidateSet('require-cuda', 'allow-cpu')]
+  [string]$Hardware = 'require-cuda',
+
+  [Parameter(Position = 5)]
+  [ValidateSet('auto', 'setup')]
+  [string]$SetupMode = 'auto',
+
+  [Parameter(Position = 6)]
+  [int]$DebugLimit = 0,
 
   [string]$RepoUrl = 'https://github.com/aarohkandy/Copain.git',
 
-  [switch]$Setup,
-
-  [switch]$PreflightOnly,
-
-  [switch]$AllowCpu,
-
-  [switch]$No4Bit,
-
-  [int]$DebugLimit = 0
+  [switch]$No4Bit
 )
 
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+$PreflightOnly = $Mode -eq 'preflight'
+$AllowCpu = $Hardware -eq 'allow-cpu'
+$Setup = $SetupMode -eq 'setup'
 
 function Write-Step {
   param([string]$Message)
@@ -77,6 +91,9 @@ Write-Output "project_root=$ProjectRoot"
 Write-Output "dataset_dir=$DatasetDir"
 Write-Output "run_dir=$RunDir"
 Write-Output "preset=$Preset"
+Write-Output "mode=$Mode"
+Write-Output "hardware=$Hardware"
+Write-Output "setup_mode=$SetupMode"
 
 Write-Step 'Clone or update Copaine repo'
 if (-not (Test-Path -LiteralPath $ProjectRoot -PathType Container)) {
