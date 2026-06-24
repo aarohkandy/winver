@@ -26,8 +26,6 @@ param(
   [Parameter(Position = 6)]
   [int]$DebugLimit = 0,
 
-  [string]$RepoUrl = 'https://github.com/aarohkandy/Copain.git',
-
   [switch]$No4Bit
 )
 
@@ -71,7 +69,7 @@ if (-not $env:WINVER_DATA -or -not $env:WINVER_RUNS -or -not $env:WINVER_LOGS) {
   throw 'This script must run through `winver job start`, because it needs WINVER_DATA, WINVER_RUNS, and WINVER_LOGS.'
 }
 
-$ProjectRoot = Join-Path $env:WINVER_DATA 'projects\Copain'
+$ProjectRoot = Join-Path $env:WINVER_REPO 'projects\copaine-training'
 $DefaultDatasetDir = Join-Path $env:WINVER_DATA 'copaine\training_assets'
 if (-not $DatasetDir) {
   $DatasetDir = $DefaultDatasetDir
@@ -95,19 +93,17 @@ Write-Output "mode=$Mode"
 Write-Output "hardware=$Hardware"
 Write-Output "setup_mode=$SetupMode"
 
-Write-Step 'Clone or update Copaine repo'
-if (-not (Test-Path -LiteralPath $ProjectRoot -PathType Container)) {
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ProjectRoot) | Out-Null
-  git clone $RepoUrl $ProjectRoot
+Write-Step 'Use bundled Copaine training code'
+Require-Directory $ProjectRoot
+Push-Location $env:WINVER_REPO
+try {
+  git rev-parse HEAD
+} finally {
+  Pop-Location
 }
 
 Push-Location $ProjectRoot
 try {
-  git fetch origin
-  git checkout $Branch
-  git pull --ff-only origin $Branch
-  git rev-parse HEAD
-
   $VenvPython = Join-Path $ProjectRoot '.venv-gemma\Scripts\python.exe'
   Require-File (Join-Path $ProjectRoot 'train_gemma_local.py')
   Require-File (Join-Path $ProjectRoot 'model_presets.py')

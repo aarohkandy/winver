@@ -1,0 +1,10 @@
+accelerate
+datasets
+evaluate
+huggingface_hub
+peft
+protobuf
+sentencepiece
+tensorboard
+transformers
+trl
