@@ -217,6 +217,8 @@ UEFI/SEMM commands inventory and plan only. Firmware enrollment, lock changes, a
 
 More detail lives in [docs/deep-control.md](docs/deep-control.md).
 
+For using the Surface worker from other project repos, see [docs/use-from-other-projects.md](docs/use-from-other-projects.md).
+
 ## If Setup Gets Confusing
 
 Use [docs/plain-setup-status.md](docs/plain-setup-status.md).
