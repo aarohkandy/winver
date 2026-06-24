@@ -55,3 +55,10 @@ If Tailscale can ping `winver` but the Mac cannot connect to port 22, then Windo
 
 The usual fix is to run the Windows setup script from Administrator PowerShell with the Mac public key.
 
+Current exact setup command:
+
+```powershell
+.\windows\setup.ps1 -MacPublicKey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPGcjUvhlZ9ax+Br46uEcZKL7Xa12+qwieYLvstr5tQp winver mac access"
+```
+
+See [current-handoff.md](current-handoff.md) for the current handoff between the Mac-side and Windows-side setup agents.

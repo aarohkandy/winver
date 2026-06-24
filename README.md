@@ -190,6 +190,7 @@ More detail lives in [docs/deep-control.md](docs/deep-control.md).
 ## If Setup Gets Confusing
 
 Use [docs/plain-setup-status.md](docs/plain-setup-status.md).
+The current exact cross-machine handoff is in [docs/current-handoff.md](docs/current-handoff.md).
 
 Short version:
 

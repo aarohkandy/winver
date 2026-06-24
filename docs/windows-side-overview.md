@@ -53,12 +53,19 @@ Copying a private key onto the Windows worker would make the setup less secure.
 
 ## Remaining Windows Setup Command
 
-After the Mac public key is available, run this from an elevated Administrator PowerShell on Windows:
+Run this from an elevated Administrator PowerShell on Windows:
 
 ```powershell
 cd $env:USERPROFILE\winver
+git pull --ff-only
 Set-ExecutionPolicy -Scope Process Bypass -Force
-.\windows\setup.ps1 -MacPublicKey "PASTE_THE_MAC_PUBLIC_KEY"
+.\windows\doctor.ps1
+```
+
+If `doctor` says setup is still needed, run:
+
+```powershell
+.\windows\setup.ps1 -MacPublicKey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPGcjUvhlZ9ax+Br46uEcZKL7Xa12+qwieYLvstr5tQp winver mac access"
 ```
 
 That setup script is expected to:
@@ -117,3 +124,5 @@ Get-Service -Name Tailscale,sshd
 ```
 
 At the time of this overview, `doctor` reports Tailscale as running, but SSH setup is still incomplete.
+
+See also [current-handoff.md](current-handoff.md), which contains the current exact commands for the Windows-side AI.
