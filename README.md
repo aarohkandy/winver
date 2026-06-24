@@ -187,6 +187,17 @@ UEFI/SEMM commands inventory and plan only. Firmware enrollment, lock changes, a
 
 More detail lives in [docs/deep-control.md](docs/deep-control.md).
 
+## If Setup Gets Confusing
+
+Use [docs/plain-setup-status.md](docs/plain-setup-status.md).
+
+Short version:
+
+- You do not share a Windows password with the Mac.
+- The Mac public SSH key gets copied once into Windows.
+- If SSH asks for a password, Windows SSH setup is incomplete.
+- On Windows, run `.\windows\doctor.ps1` and read the `Next steps` section.
+
 ## Optional auto-update
 
 The Surface can periodically pull the latest public repo code:
