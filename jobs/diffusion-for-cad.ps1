@@ -102,14 +102,18 @@ try {
     $PythonLauncher = Get-Command py -ErrorAction SilentlyContinue
     if ($PythonLauncher) {
       & $PythonLauncher.Source -3 -m venv (Join-Path $ProjectRoot '.venv-cad')
+      if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     } else {
       $PythonCommand = Get-Command python -ErrorAction SilentlyContinue
       if (-not $PythonCommand) { throw 'Python was not found on this Windows machine.' }
       & $PythonCommand.Source -m venv (Join-Path $ProjectRoot '.venv-cad')
+      if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
     Require-File $VenvPython
     & $VenvPython -m pip install --upgrade pip setuptools wheel
+    if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & $VenvPython -m pip install -r $TrainingRequirements
+    if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   }
 
   Require-File $VenvPython
@@ -128,11 +132,12 @@ if not missing:
         "torch": torch.__version__,
         "cuda_available": torch.cuda.is_available(),
         "cuda_device_count": torch.cuda.device_count(),
-        "cuda_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "",
+        "cuda_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
         "mps_available": bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available()),
     })
 print(json.dumps(payload))
 '@
+  if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   Write-Output $HardwareJson
   $HardwareInfo = $HardwareJson | ConvertFrom-Json
   if ($HardwareInfo.missing.Count -gt 0) {
