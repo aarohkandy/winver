@@ -53,15 +53,22 @@ exit /b %WINVER_EXIT%
 
 Set-Content -Path $cmdRunner -Value $cmdScript -Encoding ascii
 
-$process = Start-Process `
-  -FilePath 'cmd.exe' `
-  -ArgumentList "/d /c $(ConvertTo-CmdQuoted $cmdRunner)" `
-  -WindowStyle Hidden `
-  -PassThru
+$commandLine = "cmd.exe /d /c $(ConvertTo-CmdQuoted $cmdRunner)"
+$process = Invoke-CimMethod `
+  -ClassName Win32_Process `
+  -MethodName Create `
+  -Arguments @{
+    CommandLine = $commandLine
+    CurrentDirectory = $jobDir
+  }
+
+if ($process.ReturnValue -ne 0) {
+  throw "Could not start detached job through Win32_Process.Create. ReturnValue=$($process.ReturnValue)"
+}
 
 [pscustomobject]@{
   id = $jobId
-  pid = $process.Id
+  pid = $process.ProcessId
   command = $Command
   startedAt = (Get-Date).ToString('o')
   repoPath = $RepoPath
@@ -69,5 +76,5 @@ $process = Start-Process `
   stderr = $stderr
 } | ConvertTo-Json -Depth 4 | Set-Content -Path $meta -Encoding utf8
 
-Write-Output "Started $jobId (pid $($process.Id))"
+Write-Output "Started $jobId (pid $($process.ProcessId))"
 Write-Output "Logs: $jobDir"
