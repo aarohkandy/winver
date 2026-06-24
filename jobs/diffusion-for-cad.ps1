@@ -15,7 +15,7 @@ param(
   [ValidateSet('require-cuda', 'allow-cpu')]
   [string]$Hardware = 'allow-cpu',
 
-  [string]$RepoUrl = 'https://github.com/aarohkandy/diffusion-for-cad.git'
+  [string]$RepoUrl = 'git@github.com:aarohkandy/diffusion-for-cad.git'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,6 +55,7 @@ if (-not $env:WINVER_DATA -or -not $env:WINVER_RUNS -or -not $env:WINVER_LOGS) {
 }
 
 $ProjectRoot = Join-Path $env:WINVER_DATA 'projects\diffusion-for-cad'
+$DeployKey = Join-Path $env:USERPROFILE '.ssh\diffusion_for_cad_deploy_ed25519'
 $RunStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $RunRoot = Join-Path $env:WINVER_RUNS 'diffusion-for-cad'
 $RunDir = Join-Path $RunRoot "$Mode-$RunStamp"
@@ -70,6 +71,7 @@ Write-Output "job=$env:WINVER_JOB_NAME"
 Write-Output "data=$env:WINVER_DATA"
 Write-Output "runs=$env:WINVER_RUNS"
 Write-Output "project_root=$ProjectRoot"
+Write-Output "repo_url=$RepoUrl"
 Write-Output "run_dir=$RunDir"
 Write-Output "branch=$Branch"
 Write-Output "mode=$Mode"
@@ -77,6 +79,8 @@ Write-Output "setup_mode=$SetupMode"
 Write-Output "hardware=$Hardware"
 
 Write-Step 'Clone or update diffusion-for-cad repo'
+Require-File $DeployKey
+$env:GIT_SSH_COMMAND = "ssh -i `"$DeployKey`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 if (-not (Test-Path -LiteralPath $ProjectRoot -PathType Container)) {
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ProjectRoot) | Out-Null
   git clone $RepoUrl $ProjectRoot
