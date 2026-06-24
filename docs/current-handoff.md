@@ -1,6 +1,6 @@
 # Current Handoff
 
-Last updated: 2026-06-23, America/Los_Angeles.
+Last updated: 2026-06-23 17:18, America/Los_Angeles.
 
 This is the plain handoff for another AI or human working on the Windows Surface.
 
@@ -9,8 +9,10 @@ This is the plain handoff for another AI or human working on the Windows Surface
 - Mac Tailscale is connected.
 - Windows Tailscale is connected and visible as `winver`.
 - Mac can Tailscale-ping `winver`.
-- Mac cannot connect to `winver` port 22 yet.
-- That means Windows is online, but Windows OpenSSH is not reachable yet.
+- Mac can connect to `winver` port 22.
+- Mac SSH host trust and username have been fixed locally.
+- Windows now rejects the Mac public key with `Permission denied (publickey,keyboard-interactive)`.
+- See [mac-verification-status.md](mac-verification-status.md) for the exact Mac-side test result.
 
 ## Important
 
@@ -20,7 +22,7 @@ This setup uses SSH keys:
 
 - Mac private key stays on the Mac.
 - Mac public key is copied into Windows setup.
-- If SSH asks for a password, Windows SSH setup is incomplete.
+- If SSH asks for a password or rejects the key, Windows SSH key setup is incomplete.
 - The only password/PIN that may be needed is local Windows administrator approval.
 
 ## Run This On Windows
@@ -36,6 +38,13 @@ Set-ExecutionPolicy -Scope Process Bypass -Force
 
 Read the `Next steps` section.
 
+Then inspect the key files:
+
+```powershell
+Get-Content $env:USERPROFILE\.ssh\authorized_keys
+Get-Content C:\ProgramData\ssh\administrators_authorized_keys
+```
+
 If it says setup is needed, run this in the same Administrator PowerShell:
 
 ```powershell
@@ -50,7 +59,7 @@ Then run:
 
 ## Then Tell The Mac Side
 
-After Windows doctor says the Windows side is ready, ask the Mac-side AI to run:
+After Windows accepts the Mac key, ask the Mac-side AI to run:
 
 ```sh
 ./bin/winver check
@@ -63,4 +72,3 @@ After Windows doctor says the Windows side is ready, ask the Mac-side AI to run:
 Deep admin mode exists, but do not initialize it until basic SSH works.
 
 Do not commit or paste the admin signing key into GitHub.
-
