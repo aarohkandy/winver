@@ -104,8 +104,8 @@ Invoke-Winver "Adding Mac SSH public key" {
   $existingAdmin = Get-Content $adminKeys -ErrorAction SilentlyContinue
   if ($existingAdmin -notcontains $MacPublicKey) { Add-Content -Path $adminKeys -Value $MacPublicKey }
 
-  icacls $sshDir /inheritance:r /grant "$($env:USERNAME):(OI)(CI)F" /remove "Users" "Authenticated Users" | Out-Null
-  icacls $authorizedKeys /inheritance:r /grant "$($env:USERNAME):F" /remove "Users" "Authenticated Users" | Out-Null
+  icacls $sshDir /inheritance:r /grant "$($env:USERNAME):(OI)(CI)F" /grant "SYSTEM:(OI)(CI)F" /remove "Users" "Authenticated Users" | Out-Null
+  icacls $authorizedKeys /inheritance:r /grant "$($env:USERNAME):F" /grant "SYSTEM:F" /remove "Users" "Authenticated Users" | Out-Null
   icacls $adminKeys /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F" /remove "Users" "Authenticated Users" | Out-Null
 }
 

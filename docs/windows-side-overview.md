@@ -1,6 +1,6 @@
 # Windows Side Overview
 
-Last checked: 2026-06-23, America/Los_Angeles.
+Last checked: 2026-06-23 17:34, America/Los_Angeles.
 
 This file describes the current state of the Windows worker side of `winver`. It is written from the Windows machine that is intended to act as the performance/server box for a Mac.
 
@@ -23,6 +23,12 @@ The Mac remains the comfortable client machine. The Windows machine can run heav
 - Tailscale is installed.
 - Tailscale service is running and starts automatically.
 - Tailscale login has completed and this machine is visible on the tailnet as `winver`.
+- OpenSSH Server is running and starts automatically.
+- Port 22 is listening.
+- The Mac public SSH key is installed.
+- `SYSTEM` can read `C:\Users\arvin\.ssh\authorized_keys`, which is required because the OpenSSH service runs as `SYSTEM`.
+- Password SSH login is disabled.
+- The Tailscale-only SSH firewall rule exists.
 - The actual Tailscale IP is intentionally not committed here because this repository may be public. It can be checked locally with:
 
 ```powershell
@@ -31,12 +37,8 @@ The Mac remains the comfortable client machine. The Windows machine can run heav
 
 ## What Is Not Finished Yet
 
-- OpenSSH Server is present but not configured for this project yet.
-- The `sshd` service is currently stopped and set to manual start.
-- `C:\Users\arvin\.ssh\authorized_keys` has not been created by the setup script yet.
-- `C:\ProgramData\ssh\sshd_config` has not been created or hardened by the setup script yet.
-- The Tailscale-only SSH firewall rule has not been created yet.
-- The Mac SSH public key still needs to be supplied to the Windows setup script.
+- The Mac side still needs to pull the latest repo and retry `./bin/winver check`.
+- Deep admin mode is optional and has not been initialized.
 
 ## Important SSH Key Clarification
 
@@ -72,6 +74,7 @@ That setup script is expected to:
 
 - Install and enable OpenSSH Server if needed.
 - Add the Mac public key.
+- Grant `SYSTEM` access to the user key file so `sshd` can read it.
 - Disable password SSH login.
 - Restrict SSH login to the configured Windows user.
 - Restrict inbound SSH to Tailscale IP space.
@@ -123,6 +126,6 @@ Get-Service -Name Tailscale,sshd
 & 'C:\Program Files\Tailscale\tailscale.exe' status
 ```
 
-At the time of this overview, `doctor` reports Tailscale as running, but SSH setup is still incomplete.
+At the time of this overview, `doctor` reports the core Windows worker path as ready. It may still warn that the current shell is not elevated and that optional deep admin mode is not initialized.
 
 See also [current-handoff.md](current-handoff.md), which contains the current exact commands for the Windows-side AI.

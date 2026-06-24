@@ -1,6 +1,6 @@
 # Current Handoff
 
-Last updated: 2026-06-23 17:18, America/Los_Angeles.
+Last updated: 2026-06-23 17:34, America/Los_Angeles.
 
 This is the plain handoff for another AI or human working on the Windows Surface.
 
@@ -11,8 +11,10 @@ This is the plain handoff for another AI or human working on the Windows Surface
 - Mac can Tailscale-ping `winver`.
 - Mac can connect to `winver` port 22.
 - Mac SSH host trust and username have been fixed locally.
-- Windows now rejects the Mac public key with `Permission denied (publickey,keyboard-interactive)`.
-- See [mac-verification-status.md](mac-verification-status.md) for the exact Mac-side test result.
+- Mac previously saw `Permission denied (publickey,keyboard-interactive)`.
+- Windows diagnosed that as an ACL issue on `C:\Users\arvin\.ssh\authorized_keys`: the OpenSSH service runs as `SYSTEM`, but `SYSTEM` did not have access to read the user key file.
+- Windows has now granted `SYSTEM` access, verified local key login succeeds, and updated `windows/setup.ps1` plus `windows/doctor.ps1` so this is preserved and diagnosed.
+- See [mac-verification-status.md](mac-verification-status.md) for the earlier Mac-side failure and Windows follow-up.
 
 ## Important
 
@@ -25,9 +27,19 @@ This setup uses SSH keys:
 - If SSH asks for a password or rejects the key, Windows SSH key setup is incomplete.
 - The only password/PIN that may be needed is local Windows administrator approval.
 
-## Run This On Windows
+## Current Windows Verification
 
-Open **PowerShell as Administrator** on the Windows Surface:
+Windows-side checks now show:
+
+- Tailscale service running.
+- `sshd` running.
+- Port 22 listening.
+- Mac public key installed.
+- `authorized_keys` readable by `SYSTEM`.
+- Password SSH disabled.
+- Tailscale-only SSH firewall rule present.
+
+Useful Windows check:
 
 ```powershell
 cd $env:USERPROFILE\winver
@@ -36,36 +48,18 @@ Set-ExecutionPolicy -Scope Process Bypass -Force
 .\windows\doctor.ps1
 ```
 
-Read the `Next steps` section.
-
-Then inspect the key files:
-
-```powershell
-Get-Content $env:USERPROFILE\.ssh\authorized_keys
-Get-Content C:\ProgramData\ssh\administrators_authorized_keys
-```
-
-If it says setup is needed, run this in the same Administrator PowerShell:
-
-```powershell
-.\windows\setup.ps1 -MacPublicKey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPGcjUvhlZ9ax+Br46uEcZKL7Xa12+qwieYLvstr5tQp winver mac access"
-```
-
-Then run:
-
-```powershell
-.\windows\doctor.ps1
-```
-
 ## Then Tell The Mac Side
 
-After Windows accepts the Mac key, ask the Mac-side AI to run:
+Ask the Mac-side AI to pull latest and retry:
 
 ```sh
+git pull --ff-only
 ./bin/winver check
 ./bin/winver start "Write-Output hello from winver"
 ./bin/winver logs
 ```
+
+If the Mac still sees `Permission denied`, check `docs/mac-verification-status.md` and Windows OpenSSH logs next.
 
 ## Optional Later
 

@@ -2,7 +2,7 @@
 
 Last checked from the Mac: 2026-06-23 17:18 America/Los_Angeles.
 
-This document records what happened after the Mac pulled the latest Windows-side status.
+This document records what happened after the Mac pulled the latest Windows-side status, plus the Windows-side follow-up.
 
 ## What Windows Asked Mac To Run
 
@@ -48,9 +48,9 @@ arvin@winver: Permission denied (publickey,keyboard-interactive).
 
 ## Current Meaning
 
-This is no longer a Tailscale/network problem.
+This was no longer a Tailscale/network problem.
 
-This is also not a Windows-password problem.
+This was also not a Windows-password problem.
 
 The Mac reaches `winver:22`, recognizes the Windows SSH host key, uses username `arvin`, and offers this explicit key:
 
@@ -70,7 +70,49 @@ Public key that Windows should accept:
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPGcjUvhlZ9ax+Br46uEcZKL7Xa12+qwieYLvstr5tQp winver mac access
 ```
 
-## What Windows Should Check Next
+## Windows Follow-Up
+
+Windows checked the exact public key installed in `C:\Users\arvin\.ssh\authorized_keys`.
+
+The installed key fingerprint matched the Mac-side fingerprint exactly:
+
+```text
+SHA256:8B4kQiBfb+zjsyUmiS4B67xC9nzFJACyE/MXOdXs/as
+```
+
+Windows then tested a throwaway local key through the same `authorized_keys` path. It failed with the same public-key rejection until the key file ACL was updated to allow `SYSTEM` to read it.
+
+After granting `SYSTEM` access to:
+
+```text
+C:\Users\arvin\.ssh
+C:\Users\arvin\.ssh\authorized_keys
+```
+
+the throwaway local key successfully logged in as:
+
+```text
+laptop-gqhrbu3i\arvin
+```
+
+The throwaway key was removed after the test.
+
+## Windows Fix Applied
+
+`windows/setup.ps1` now grants `SYSTEM` access to the user `.ssh` directory and `authorized_keys` file.
+
+`windows/doctor.ps1` now reports whether `SYSTEM` can read `authorized_keys`.
+
+The Mac side should pull latest and retry:
+
+```sh
+git pull --ff-only
+./bin/winver check
+./bin/winver start "Write-Output hello from winver"
+./bin/winver logs
+```
+
+## If It Still Fails
 
 On Windows, check the exact key files OpenSSH may use:
 

@@ -1,12 +1,14 @@
 # Windows Current Status - Detailed
 
-Last checked from the Windows worker: 2026-06-23 17:12:50 -07:00.
+Last checked from the Windows worker: 2026-06-23 17:34:00 -07:00.
 
 This document records the current operational state of the Windows side of `winver`. It is meant for the Mac-side AI, the Windows-side AI, and the human operator to share one accurate picture of what has already happened and what remains.
 
 ## Short Version
 
 The Windows machine is now on Tailscale, OpenSSH is running, port 22 is listening, the Mac public SSH key is installed, password SSH login is disabled, and the firewall rule restricts SSH access to Tailscale address space.
+
+The Mac reached SSH but initially got `Permission denied (publickey,keyboard-interactive)`. Windows diagnosed that as an ACL problem: `sshd` runs as `SYSTEM`, and `SYSTEM` did not have access to read `C:\Users\arvin\.ssh\authorized_keys`. That ACL is now fixed, and a throwaway local key test successfully logged in through the same key path.
 
 The basic Windows worker path should be ready for the Mac to test with:
 
@@ -80,6 +82,7 @@ Observed locally:
 - TCP port 22: listening locally
 - `Test-NetConnection -ComputerName winver -Port 22`: succeeds from this Windows machine
 - Mac public SSH key: installed in `C:\Users\arvin\.ssh\authorized_keys`
+- `SYSTEM` can read `C:\Users\arvin\.ssh\authorized_keys`
 - Password SSH login: disabled
 - Public-key SSH login: enabled
 - SSH allowed Windows user: `arvin`
@@ -138,12 +141,16 @@ The following setup actions have effectively completed:
 - Started `sshd`.
 - Verified port 22 is listening.
 - Verified local TCP connection to `winver:22` succeeds.
+- Fixed the `authorized_keys` ACL so `SYSTEM` can read the key file.
+- Verified with a throwaway local SSH key that public-key login now succeeds through the user key file.
+- Removed the throwaway local SSH key after testing.
 
 ## What Remains
 
 Mac-side verification still needs to run against this Windows worker:
 
 ```sh
+git pull --ff-only
 ./bin/winver check
 ./bin/winver start "Write-Output hello from winver"
 ./bin/winver logs
@@ -173,6 +180,7 @@ Expected important results:
 - OpenSSH service is running.
 - Port 22 is listening.
 - `authorized_keys` has one SSH public key.
+- `authorized_keys SYSTEM ACL` says `SYSTEM can read key file`.
 - SSH firewall rule exists.
 - Password SSH is disabled.
 - Key SSH is enabled.
@@ -207,6 +215,13 @@ If SSH asks for a Windows password:
 - Re-check that the Mac is using `~/.ssh/winver_ed25519`.
 - Re-check that the matching `.pub` key is present in `C:\Users\arvin\.ssh\authorized_keys`.
 - Re-run `windows/setup.ps1` from Administrator PowerShell with the Mac public key if necessary.
+
+If SSH rejects the key with `Permission denied (publickey,keyboard-interactive)`:
+
+- Check `.\windows\doctor.ps1` for `authorized_keys SYSTEM ACL`.
+- Ensure `C:\Users\arvin\.ssh` grants `SYSTEM:(OI)(CI)F`.
+- Ensure `C:\Users\arvin\.ssh\authorized_keys` grants `SYSTEM:F`.
+- Re-run the latest `windows/setup.ps1` from Administrator PowerShell if the ACL check fails.
 
 ## Files Worth Knowing
 

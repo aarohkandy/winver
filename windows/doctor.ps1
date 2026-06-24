@@ -64,6 +64,18 @@ $authorizedKeyCount = 0
 if (Test-Path $authorizedKeys) {
   $authorizedKeyCount = @((Get-Content $authorizedKeys -ErrorAction SilentlyContinue) | Where-Object { $_ -match '^ssh-' }).Count
 }
+$authorizedKeysAllowsSystem = $false
+if (Test-Path $authorizedKeys) {
+  try {
+    $authorizedKeysAllowsSystem = [bool]((Get-Acl $authorizedKeys).Access | Where-Object {
+      $_.IdentityReference -match 'SYSTEM' -and
+      $_.FileSystemRights.ToString() -match 'FullControl|Read|ReadAndExecute' -and
+      $_.AccessControlType -eq 'Allow'
+    })
+  } catch {
+    $authorizedKeysAllowsSystem = $false
+  }
+}
 
 Add-Check 'Windows' $true ([System.Environment]::OSVersion.VersionString)
 Add-Check 'Admin shell' $isAdmin ($(if ($isAdmin) { 'running elevated' } else { 'not elevated' }))
@@ -75,6 +87,7 @@ Add-Check 'Git' (Has-Command git) ($(if (Has-Command git) { (git --version) } el
 Add-Check 'Codex' (Has-Command codex) ($(if (Has-Command codex) { 'available' } else { 'missing or not on PATH' }))
 Add-Check 'Repo path' (Test-Path $RepoPath) $RepoPath
 Add-Check 'authorized_keys' ($authorizedKeyCount -gt 0) ($(if ($authorizedKeyCount -gt 0) { "$authorizedKeyCount SSH public key(s)" } else { "missing or empty: $authorizedKeys" }))
+Add-Check 'authorized_keys SYSTEM ACL' $authorizedKeysAllowsSystem ($(if ($authorizedKeysAllowsSystem) { 'SYSTEM can read key file' } else { 'SYSTEM cannot read key file' }))
 Add-Check 'SSH firewall' ([bool]$firewall) ($(if ($firewall) { 'Winver-SSHD-Tailscale exists' } else { 'missing' }))
 Add-Check 'Admin signing key' (Test-Path $adminKey) ($(if (Test-Path $adminKey) { $adminKey } else { 'optional, not initialized' }))
 
@@ -87,8 +100,9 @@ if (Test-Path $sshdConfig) {
 }
 
 $setupCommand = '.\windows\setup.ps1 -MacPublicKey "PASTE_THE_MAC_PUBLIC_KEY_FROM_MAC"'
+$setupNeeded = (-not $sshd -or $sshd.Status -ne 'Running' -or -not $sshListening -or $authorizedKeyCount -eq 0 -or -not $authorizedKeysAllowsSystem -or -not $firewall -or -not (Test-Path $sshdConfig))
 
-if (-not $isAdmin) {
+if ($setupNeeded -and -not $isAdmin) {
   Add-NextStep 'Open PowerShell as Administrator, then run this doctor again.'
 }
 if (-not $tailscale -or $tailscale.Status -ne 'Running' -or -not $tailscaleIp) {
@@ -97,7 +111,7 @@ if (-not $tailscale -or $tailscale.Status -ne 'Running' -or -not $tailscaleIp) {
 if (-not (Test-Path $RepoPath)) {
   Add-NextStep 'Clone the repo: git clone https://github.com/aarohkandy/winver.git $env:USERPROFILE\winver'
 }
-if (-not $sshd -or $sshd.Status -ne 'Running' -or -not $sshListening -or $authorizedKeyCount -eq 0 -or -not $firewall -or -not (Test-Path $sshdConfig)) {
+if ($setupNeeded) {
   Add-NextStep "Run setup in Administrator PowerShell from the repo folder: cd `$env:USERPROFILE\winver; Set-ExecutionPolicy -Scope Process Bypass -Force; $setupCommand"
 }
 if (-not (Test-Path $adminKey)) {
