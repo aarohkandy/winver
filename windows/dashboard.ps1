@@ -41,7 +41,9 @@ function Get-WinverServices {
 }
 
 function Get-WinverProcesses {
-  @(Get-Process powershell, pwsh, node, codex, python, python3 -ErrorAction SilentlyContinue |
+  $names = @('powershell', 'pwsh', 'node', 'codex', 'python', 'python3')
+  @(Get-Process -ErrorAction SilentlyContinue |
+    Where-Object { $names -contains $_.ProcessName.ToLowerInvariant() } |
     Sort-Object CPU -Descending |
     Select-Object -First 12 |
     ForEach-Object {
