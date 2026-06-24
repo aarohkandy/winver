@@ -1,6 +1,6 @@
 # Current Handoff
 
-Last updated: 2026-06-23 17:34, America/Los_Angeles.
+Last updated: 2026-06-23 17:38, America/Los_Angeles.
 
 This is the plain handoff for another AI or human working on the Windows Surface.
 
@@ -11,10 +11,11 @@ This is the plain handoff for another AI or human working on the Windows Surface
 - Mac can Tailscale-ping `winver`.
 - Mac can connect to `winver` port 22.
 - Mac SSH host trust and username have been fixed locally.
-- Mac previously saw `Permission denied (publickey,keyboard-interactive)`.
-- Windows diagnosed that as an ACL issue on `C:\Users\arvin\.ssh\authorized_keys`: the OpenSSH service runs as `SYSTEM`, but `SYSTEM` did not have access to read the user key file.
-- Windows has now granted `SYSTEM` access, verified local key login succeeds, and updated `windows/setup.ps1` plus `windows/doctor.ps1` so this is preserved and diagnosed.
-- See [mac-verification-status.md](mac-verification-status.md) for the earlier Mac-side failure and Windows follow-up.
+- Mac SSH now works as user `arvin`.
+- Mac can start detached jobs on Windows and read logs back later.
+- Long-running detached job behavior has been verified with a 12-second background job.
+- Windows status reporting works and shows Tailscale plus OpenSSH running automatically.
+- Earlier `Permission denied (publickey,keyboard-interactive)` was fixed by granting `SYSTEM` access to `C:\Users\arvin\.ssh\authorized_keys`.
 
 ## Important
 
@@ -27,19 +28,31 @@ This setup uses SSH keys:
 - If SSH asks for a password or rejects the key, Windows SSH key setup is incomplete.
 - The only password/PIN that may be needed is local Windows administrator approval.
 
-## Current Windows Verification
+## Verified From Mac
 
-Windows-side checks now show:
+These commands passed from the Mac:
 
-- Tailscale service running.
-- `sshd` running.
-- Port 22 listening.
-- Mac public key installed.
-- `authorized_keys` readable by `SYSTEM`.
-- Password SSH disabled.
-- Tailscale-only SSH firewall rule present.
+```sh
+./bin/winver check
+./bin/winver start "Write-Output 'process service detached job works'; Start-Sleep -Seconds 1"
+./bin/winver logs
+./bin/winver start "Write-Output 'long job started'; Start-Sleep -Seconds 12; Write-Output 'long job finished'"
+./bin/winver logs
+./bin/winver status
+```
 
-Useful Windows check:
+The verified long-job output was:
+
+```text
+exit: 0
+stdout
+long job started
+long job finished
+```
+
+## Useful Windows Check
+
+Run from Windows PowerShell if anything looks stale:
 
 ```powershell
 cd $env:USERPROFILE\winver
@@ -48,21 +61,15 @@ Set-ExecutionPolicy -Scope Process Bypass -Force
 .\windows\doctor.ps1
 ```
 
-## Then Tell The Mac Side
-
-Ask the Mac-side AI to pull latest and retry:
-
-```sh
-git pull --ff-only
-./bin/winver check
-./bin/winver start "Write-Output hello from winver"
-./bin/winver logs
-```
-
-If the Mac still sees `Permission denied`, check `docs/mac-verification-status.md` and Windows OpenSSH logs next.
-
 ## Optional Later
 
-Deep admin mode exists, but do not initialize it until basic SSH works.
+Deep admin mode exists, but it is not initialized yet.
+
+Lightweight server mode is available from the Mac:
+
+```sh
+./bin/winver server-mode
+./bin/winver control balanced
+```
 
 Do not commit or paste the admin signing key into GitHub.

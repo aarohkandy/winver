@@ -1,6 +1,6 @@
 # Windows Current Status - Detailed
 
-Last checked from the Windows worker: 2026-06-23 17:34:00 -07:00.
+Last checked from the Mac against the Windows worker: 2026-06-23 17:38:00 -07:00.
 
 This document records the current operational state of the Windows side of `winver`. It is meant for the Mac-side AI, the Windows-side AI, and the human operator to share one accurate picture of what has already happened and what remains.
 
@@ -10,12 +10,21 @@ The Windows machine is now on Tailscale, OpenSSH is running, port 22 is listenin
 
 The Mac reached SSH but initially got `Permission denied (publickey,keyboard-interactive)`. Windows diagnosed that as an ACL problem: `sshd` runs as `SYSTEM`, and `SYSTEM` did not have access to read `C:\Users\arvin\.ssh\authorized_keys`. That ACL is now fixed, and a throwaway local key test successfully logged in through the same key path.
 
-The basic Windows worker path should be ready for the Mac to test with:
+The basic Windows worker path is now verified from the Mac:
 
 ```sh
 ./bin/winver check
-./bin/winver start "Write-Output hello from winver"
+./bin/winver start "Write-Output 'process service detached job works'; Start-Sleep -Seconds 1"
 ./bin/winver logs
+```
+
+A longer detached job was also verified:
+
+```text
+exit: 0
+stdout
+long job started
+long job finished
 ```
 
 Deep admin mode is not initialized yet. That is optional and should wait until the normal SSH worker flow is confirmed from the Mac.
@@ -145,20 +154,22 @@ The following setup actions have effectively completed:
 - Verified with a throwaway local SSH key that public-key login now succeeds through the user key file.
 - Removed the throwaway local SSH key after testing.
 
-## What Remains
+## Mac-Side Verification
 
-Mac-side verification still needs to run against this Windows worker:
+Mac-side verification has completed successfully.
 
 ```sh
-git pull --ff-only
 ./bin/winver check
-./bin/winver start "Write-Output hello from winver"
+./bin/winver start "Write-Output 'process service detached job works'; Start-Sleep -Seconds 1"
 ./bin/winver logs
+./bin/winver start "Write-Output 'long job started'; Start-Sleep -Seconds 12; Write-Output 'long job finished'"
+./bin/winver logs
+./bin/winver status
 ```
 
-If those commands pass, the basic Mac-to-Windows worker loop is working.
+The basic Mac-to-Windows worker loop is working: SSH connects, detached jobs run after the SSH command returns, logs can be read back, and exit codes are recorded.
 
-Deep admin mode remains optional and is not initialized yet. Do not initialize it until basic SSH has been verified from the Mac.
+Deep admin mode remains optional and is not initialized yet.
 
 ## Useful Windows Checks
 
@@ -235,13 +246,18 @@ If SSH rejects the key with `Permission denied (publickey,keyboard-interactive)`
 
 ## Current Recommendation
 
-Ask the Mac-side AI to pull the latest repo and run the three verification commands:
+The machine is ready for normal worker/server use over Tailscale SSH.
+
+For lightweight server mode from the Mac:
 
 ```sh
-git pull --ff-only
-./bin/winver check
-./bin/winver start "Write-Output hello from winver"
-./bin/winver logs
+./bin/winver server-mode
 ```
 
-If that succeeds, this Windows machine is ready to act as the normal worker endpoint.
+To return to normal laptop behavior:
+
+```sh
+./bin/winver control balanced
+```
+
+Deep admin mode can be initialized later if firmware-tier or signed privileged controls are needed.
