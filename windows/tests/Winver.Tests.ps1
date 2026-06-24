@@ -73,8 +73,8 @@ Describe 'winver Windows scripts' {
   }
 
   It 'job.ps1 reports job status' {
-    $home = Join-Path $TestDrive '.winver-status'
-    $jobDir = Join-Path $home 'logs\20260101-000000-hello'
+    $winverHome = Join-Path $TestDrive '.winver-status'
+    $jobDir = Join-Path $winverHome 'logs\20260101-000000-hello'
     New-Item -ItemType Directory -Force -Path $jobDir | Out-Null
     @{
       id = '20260101-000000-hello'
@@ -85,19 +85,19 @@ Describe 'winver Windows scripts' {
     Set-Content -Path (Join-Path $jobDir 'stdout.log') -Value 'ok'
     Set-Content -Path (Join-Path $jobDir 'stderr.log') -Value ''
 
-    $result = & (Join-Path $RepoRoot 'windows\job.ps1') -Action status -Target '20260101-000000-hello' -WinverHome $home
+    $result = & (Join-Path $RepoRoot 'windows\job.ps1') -Action status -Target '20260101-000000-hello' -WinverHome $winverHome
     $joined = $result -join "`n"
     $joined | Should -Match 'id=20260101-000000-hello'
     $joined | Should -Match 'exit=0'
   }
 
   It 'job.ps1 archives a runs folder' {
-    $home = Join-Path $TestDrive '.winver-archive'
-    $runDir = Join-Path $home 'runs\myrun'
+    $winverHome = Join-Path $TestDrive '.winver-archive'
+    $runDir = Join-Path $winverHome 'runs\myrun'
     New-Item -ItemType Directory -Force -Path $runDir | Out-Null
     Set-Content -Path (Join-Path $runDir 'result.txt') -Value 'ok'
 
-    $result = & (Join-Path $RepoRoot 'windows\job.ps1') -Action archive -Kind runs -Target myrun -WinverHome $home
+    $result = & (Join-Path $RepoRoot 'windows\job.ps1') -Action archive -Kind runs -Target myrun -WinverHome $winverHome
     $archiveLine = $result | Where-Object { $_ -like 'archive=*' } | Select-Object -First 1
     $archive = $archiveLine.Substring('archive='.Length)
     Test-Path -LiteralPath $archive | Should -BeTrue
