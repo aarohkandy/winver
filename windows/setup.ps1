@@ -83,6 +83,8 @@ $adminKeys = Join-Path $programDataSsh 'administrators_authorized_keys'
 $sshdConfig = Join-Path $programDataSsh 'sshd_config'
 $winverHome = Join-Path $env:USERPROFILE '.winver'
 $logRoot = Join-Path $winverHome 'logs'
+$dataRoot = Join-Path $winverHome 'data'
+$runsRoot = Join-Path $winverHome 'runs'
 
 Invoke-Winver "Installing OpenSSH Server if needed" {
   $capability = Get-WindowsCapability -Online -Name 'OpenSSH.Server~~~~0.0.1.0'
@@ -92,7 +94,7 @@ Invoke-Winver "Installing OpenSSH Server if needed" {
 }
 
 Invoke-Winver "Creating worker folders" {
-  New-Item -ItemType Directory -Force -Path $sshDir, $programDataSsh, $winverHome, $logRoot | Out-Null
+  New-Item -ItemType Directory -Force -Path $sshDir, $programDataSsh, $winverHome, $logRoot, $dataRoot, $runsRoot | Out-Null
 }
 
 Invoke-Winver "Adding Mac SSH public key" {

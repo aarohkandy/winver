@@ -18,6 +18,10 @@ winver update
 winver codex
 winver start "npm run build"
 winver logs
+winver job list
+winver job start hello
+winver job logs
+winver job paths
 winver control status
 winver server-mode
 winver admin status
@@ -103,6 +107,8 @@ On the Surface, the local helper is:
 .\windows\winver.ps1 doctor
 .\windows\winver.ps1 start "npm run build"
 .\windows\winver.ps1 logs latest
+.\windows\winver.ps1 job list
+.\windows\winver.ps1 job start hello
 .\windows\winver.ps1 server-mode
 .\windows\winver.ps1 admin status
 .\windows\winver.ps1 uefi inventory
@@ -139,6 +145,30 @@ winver run "git status"
 ```sh
 winver start "npm run build"
 ```
+
+### Run a named job recipe
+
+GitHub is the job recipe book. The Surface disk is the heavy workspace.
+
+```sh
+winver job list
+winver job start hello
+winver job start python -- --version
+winver job logs
+winver job paths
+```
+
+Named jobs live in [`jobs/`](jobs/). Before a named job starts, the Surface runs `git pull --ff-only`, then launches `jobs/<name>.ps1` as a detached job.
+
+Job scripts receive:
+
+- `WINVER_REPO`
+- `WINVER_DATA`
+- `WINVER_RUNS`
+- `WINVER_LOGS`
+- `WINVER_JOB_NAME`
+
+Keep scripts, tiny configs, and docs in GitHub. Keep datasets, model weights, checkpoints, generated outputs, caches, and tokens under `%USERPROFILE%\.winver` on the Surface. Local secrets can go in `%USERPROFILE%\.winver\env.ps1`; never commit them.
 
 ### Read logs
 

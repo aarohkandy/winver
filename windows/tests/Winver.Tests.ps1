@@ -24,6 +24,54 @@ Describe 'winver Windows scripts' {
     $errors | Should -BeNullOrEmpty
   }
 
+  It 'job.ps1 parses without executing' {
+    $tokens = $null
+    $errors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $RepoRoot 'windows\job.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
+    $errors | Should -BeNullOrEmpty
+  }
+
+  It 'repo job scripts parse without executing' {
+    foreach ($script in Get-ChildItem -Path (Join-Path $RepoRoot 'jobs') -Filter '*.ps1') {
+      $tokens = $null
+      $errors = $null
+      [System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+      $errors | Should -BeNullOrEmpty
+    }
+  }
+
+  It 'job.ps1 lists repo-defined jobs' {
+    $repo = Join-Path $TestDrive 'repo'
+    $jobs = Join-Path $repo 'jobs'
+    New-Item -ItemType Directory -Force -Path $jobs | Out-Null
+    Set-Content -Path (Join-Path $jobs 'hello.ps1') -Value "Write-Output 'hello'" -Encoding utf8
+
+    $result = & (Join-Path $RepoRoot 'windows\job.ps1') -Action list -RepoPath $repo -WinverHome (Join-Path $TestDrive '.winver')
+    $result | Should -Contain 'hello'
+  }
+
+  It 'job.ps1 rejects traversal names before dry-run start' {
+    $repo = Join-Path $TestDrive 'repo-reject'
+    New-Item -ItemType Directory -Force -Path (Join-Path $repo 'jobs') | Out-Null
+
+    {
+      & (Join-Path $RepoRoot 'windows\job.ps1') -Action start -Name '..\bad' -RepoPath $repo -WinverHome (Join-Path $TestDrive '.winver') -SkipPull -DryRun
+    } | Should -Throw '*Job names*'
+  }
+
+  It 'job.ps1 dry-runs a named job with decoded arguments' {
+    $repo = Join-Path $TestDrive 'repo-dry-run'
+    $jobs = Join-Path $repo 'jobs'
+    New-Item -ItemType Directory -Force -Path $jobs | Out-Null
+    Set-Content -Path (Join-Path $jobs 'hello.ps1') -Value "Write-Output 'hello'" -Encoding utf8
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('["--version"]'))
+
+    $result = & (Join-Path $RepoRoot 'windows\job.ps1') -Action start -Name 'hello' -ArgsJsonBase64 $encoded -RepoPath $repo -WinverHome (Join-Path $TestDrive '.winver') -SkipPull -DryRun
+    $joined = $result -join "`n"
+    $joined | Should -Match 'job=hello'
+    $joined | Should -Match 'args=--version'
+  }
+
   It 'control.ps1 parses without executing' {
     $tokens = $null
     $errors = $null

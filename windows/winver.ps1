@@ -21,6 +21,10 @@ Usage:
   .\windows\winver.ps1 codex
   .\windows\winver.ps1 start "npm run build"
   .\windows\winver.ps1 logs latest
+  .\windows\winver.ps1 job list
+  .\windows\winver.ps1 job start hello
+  .\windows\winver.ps1 job logs latest
+  .\windows\winver.ps1 job paths
   .\windows\winver.ps1 control status
   .\windows\winver.ps1 status
   .\windows\winver.ps1 server-mode
@@ -116,6 +120,42 @@ function Invoke-Doctor {
   & (Join-Path $RepoPath 'windows\doctor.ps1') @doctorParams
 }
 
+function ConvertTo-Base64Json {
+  param([string[]]$Values)
+  $json = ConvertTo-Json -Compress -InputObject ([string[]]$Values)
+  [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+}
+
+function Invoke-LocalJob {
+  $action = if ($Rest.Count -gt 0) { $Rest[0] } else { 'list' }
+
+  switch ($action) {
+    'list' {
+      & (Join-Path $RepoPath 'windows\job.ps1') -Action list -RepoPath $RepoPath
+    }
+    'paths' {
+      & (Join-Path $RepoPath 'windows\job.ps1') -Action paths -RepoPath $RepoPath
+    }
+    'logs' {
+      $target = if ($Rest.Count -gt 1) { $Rest[1] } else { 'latest' }
+      & (Join-Path $RepoPath 'windows\job.ps1') -Action logs -Target $target -RepoPath $RepoPath
+    }
+    'start' {
+      if ($Rest.Count -lt 2) { throw 'Usage: .\windows\winver.ps1 job start <name> -- <args...>' }
+      $name = $Rest[1]
+      $jobArgs = if ($Rest.Count -gt 2) { @($Rest[2..($Rest.Count - 1)]) } else { @() }
+      if ($jobArgs.Count -gt 0 -and $jobArgs[0] -eq '--') {
+        $jobArgs = if ($jobArgs.Count -gt 1) { @($jobArgs[1..($jobArgs.Count - 1)]) } else { @() }
+      }
+      $encodedArgs = ConvertTo-Base64Json $jobArgs
+      & (Join-Path $RepoPath 'windows\job.ps1') -Action start -Name $name -ArgsJsonBase64 $encodedArgs -RepoPath $RepoPath
+    }
+    default {
+      throw "Unknown job action '$action'. Use: .\windows\winver.ps1 job <list|start|logs|paths>"
+    }
+  }
+}
+
 switch ($Command) {
   'help' {
     Show-Help
@@ -146,6 +186,9 @@ switch ($Command) {
   'logs' {
     $target = if ($Rest.Count -gt 0) { $Rest[0] } else { 'latest' }
     & (Join-Path $RepoPath 'windows\logs.ps1') -Target $target
+  }
+  'job' {
+    Invoke-LocalJob
   }
   'control' {
     $action = if ($Rest.Count -gt 0) { $Rest[0] } else { 'status' }
