@@ -70,7 +70,8 @@ if (-not $env:WINVER_DATA -or -not $env:WINVER_RUNS -or -not $env:WINVER_LOGS) {
 }
 
 $ProjectRoot = Join-Path $env:WINVER_REPO 'projects\copaine-training'
-$DefaultDatasetDir = Join-Path $env:WINVER_DATA 'copaine\training_assets'
+$DefaultDatasetDir = Join-Path $env:WINVER_DATA 'copaine\training_assets_kaggle_human_plus_topical'
+$DownloadsDatasetDir = 'C:\Users\arvin\Downloads\copaine\training_assets_kaggle_human_plus_topical'
 if (-not $DatasetDir) {
   $DatasetDir = $DefaultDatasetDir
 }
@@ -105,12 +106,27 @@ try {
 Push-Location $ProjectRoot
 try {
   $VenvPython = Join-Path $ProjectRoot '.venv-gemma\Scripts\python.exe'
-  Require-File (Join-Path $ProjectRoot 'train_gemma_local.py')
+  Require-File (Join-Path $ProjectRoot 'train_qwen_lora.py')
   Require-File (Join-Path $ProjectRoot 'model_presets.py')
+  if (-not (Test-Path -LiteralPath $DatasetDir -PathType Container) -and
+      $DatasetDir -eq $DefaultDatasetDir -and
+      (Test-Path -LiteralPath $DownloadsDatasetDir -PathType Container)) {
+    Write-Step 'Stage dataset into WINVER_DATA'
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $DatasetDir) | Out-Null
+    Copy-Item -LiteralPath $DownloadsDatasetDir -Destination $DatasetDir -Recurse -Force
+  }
   Require-Directory $DatasetDir
 
-  $TrainFile = Join-Path $DatasetDir 'train_chat.jsonl'
-  $ValFile = Join-Path $DatasetDir 'val_chat.jsonl'
+  $TrainFileName = 'train_mixed.jsonl'
+  $ValFileName = 'val_mixed.jsonl'
+  if (-not (Test-Path -LiteralPath (Join-Path $DatasetDir $TrainFileName) -PathType Leaf) -and
+      (Test-Path -LiteralPath (Join-Path $DatasetDir 'train_chat.jsonl') -PathType Leaf)) {
+    $TrainFileName = 'train_chat.jsonl'
+    $ValFileName = 'val_chat.jsonl'
+  }
+
+  $TrainFile = Join-Path $DatasetDir $TrainFileName
+  $ValFile = Join-Path $DatasetDir $ValFileName
   Require-File $TrainFile
   Require-File $ValFile
 
@@ -124,9 +140,19 @@ try {
   }
 
   Write-Step 'Dataset check'
+  Write-Output "train_file=$TrainFileName"
+  Write-Output "val_file=$ValFileName"
   Write-Output "train_rows=$TrainCount"
   Write-Output "val_rows=$ValCount"
   Get-ChildItem -LiteralPath $DatasetDir -File | Select-Object Name,Length,LastWriteTime | Format-Table -AutoSize
+
+  Write-Step 'Windows GPU check'
+  $VideoControllers = @(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name)
+  $VideoControllers | ForEach-Object { Write-Output "video_controller=$_" }
+  $HasNvidiaGpu = $VideoControllers | Where-Object { $_ -match 'NVIDIA' }
+  if (-not $HasNvidiaGpu -and -not $AllowCpu) {
+    throw 'No NVIDIA/CUDA GPU was detected. Refusing to start a long CPU training run. Use a CUDA-capable Windows box or pass allow-cpu deliberately.'
+  }
 
   if ($Setup -or -not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
     Write-Step 'Install or refresh Python training environment'
@@ -180,22 +206,13 @@ print(json.dumps(payload))
   Write-Step 'Start training'
   $TrainArgs = @(
     '-X', 'utf8',
-    (Join-Path $ProjectRoot 'train_gemma_local.py'),
-    '--model-id', $PresetData.model_id,
+    (Join-Path $ProjectRoot 'train_qwen_lora.py'),
+    '--preset', $Preset,
     '--dataset-dir', $DatasetDir,
+    '--train-file', $TrainFileName,
+    '--val-file', $ValFileName,
     '--output-dir', $RunDir,
-    '--max-length', "$($PresetData.max_length)",
-    '--num-train-epochs', "$($PresetData.num_train_epochs)",
-    '--per-device-train-batch-size', "$($PresetData.per_device_train_batch_size)",
-    '--per-device-eval-batch-size', "$($PresetData.per_device_eval_batch_size)",
-    '--gradient-accumulation-steps', "$($PresetData.gradient_accumulation_steps)",
-    '--learning-rate', "$($PresetData.learning_rate)",
-    '--warmup-ratio', "$($PresetData.warmup_ratio)",
-    '--lora-r', "$($PresetData.lora_r)",
-    '--lora-alpha', "$($PresetData.lora_alpha)",
-    '--lora-dropout', "$($PresetData.lora_dropout)",
-    '--save-steps', "$($PresetData.save_steps)",
-    '--eval-steps', "$($PresetData.eval_steps)"
+    '--report-to', 'tensorboard'
   )
 
   if ($AllowCpu) { $TrainArgs += '--allow-cpu' }
