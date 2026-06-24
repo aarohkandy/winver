@@ -6,13 +6,13 @@ param(
 )
 
 if (-not (Test-Path $LogRoot)) {
-  Write-Host "No winver logs yet: $LogRoot"
+  Write-Output "No winver logs yet: $LogRoot"
   exit 0
 }
 
 $jobs = Get-ChildItem -Path $LogRoot -Directory | Sort-Object Name -Descending
 if (-not $jobs) {
-  Write-Host "No winver jobs yet."
+  Write-Output "No winver jobs yet."
   exit 0
 }
 
@@ -44,16 +44,15 @@ $stdout = Join-Path $job.FullName 'stdout.log'
 $stderr = Join-Path $job.FullName 'stderr.log'
 $exitCode = Join-Path $job.FullName 'exit.code'
 
-Write-Host ""
-Write-Host $job.Name -ForegroundColor Cyan
+Write-Output ""
+Write-Output $job.Name
 if (Test-Path $meta) { Get-Content $meta }
-if (Test-Path $exitCode) { Write-Host "exit: $(Get-Content $exitCode)" -ForegroundColor Yellow }
+if (Test-Path $exitCode) { Write-Output "exit: $(Get-Content $exitCode)" }
 
-Write-Host ""
-Write-Host "stdout" -ForegroundColor Green
-if (Test-Path $stdout) { Get-Content $stdout -Tail $Tail } else { Write-Host "(empty)" }
+Write-Output ""
+Write-Output "stdout"
+if (Test-Path $stdout) { Get-Content $stdout -Tail $Tail } else { Write-Output "(empty)" }
 
-Write-Host ""
-Write-Host "stderr" -ForegroundColor Yellow
-if (Test-Path $stderr) { Get-Content $stderr -Tail $Tail } else { Write-Host "(empty)" }
-
+Write-Output ""
+Write-Output "stderr"
+if (Test-Path $stderr) { Get-Content $stderr -Tail $Tail } else { Write-Output "(empty)" }

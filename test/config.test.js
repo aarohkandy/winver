@@ -26,7 +26,18 @@ test("sshArgs keeps options before host", () => {
 });
 
 test("powershell command is explicit and non-profile", () => {
-  assert.deepEqual(powershellCommand("Write-Host ok").slice(0, 5), ["powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass"]);
+  assert.deepEqual(powershellCommand("Write-Host ok").slice(0, 7), ["powershell.exe", "-NonInteractive", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand"]);
+});
+
+test("powershell command uses an encoded payload for cmd-safe SSH transport", () => {
+  const command = "& (Join-Path $RepoPath 'windows\\run-job.ps1') -Command 'Write-Output hello'";
+  const args = powershellCommand(command);
+  const encoded = args.at(-1);
+  const decoded = Buffer.from(encoded, "base64").toString("utf16le");
+  assert.match(decoded, /\$ProgressPreference = 'SilentlyContinue'/);
+  assert.match(decoded, /windows\\run-job\.ps1/);
+  assert.equal(encoded.includes("&"), false);
+  assert.equal(encoded.includes("'"), false);
 });
 
 test("repo commands set the repo path before running", () => {

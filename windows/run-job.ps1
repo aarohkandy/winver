@@ -20,6 +20,7 @@ $jobDir = Join-Path $LogRoot $jobId
 $stdout = Join-Path $jobDir 'stdout.log'
 $stderr = Join-Path $jobDir 'stderr.log'
 $runner = Join-Path $jobDir 'run.ps1'
+$cmdRunner = Join-Path $jobDir 'run.cmd'
 $meta = Join-Path $jobDir 'meta.json'
 
 New-Item -ItemType Directory -Force -Path $jobDir | Out-Null
@@ -31,18 +32,30 @@ Set-Location -LiteralPath '$($RepoPath.Replace("'", "''"))'
 $Command
 '@
 Invoke-Expression `$command
-`$exit = if (`$LASTEXITCODE -is [int]) { `$LASTEXITCODE } else { 0 }
-Set-Content -Path '$($jobDir.Replace("'", "''"))\exit.code' -Value `$exit
-exit `$exit
+if (`$LASTEXITCODE -is [int]) { exit `$LASTEXITCODE }
+exit 0
 "@
 
 Set-Content -Path $runner -Value $script -Encoding utf8
 
+function ConvertTo-CmdQuoted {
+  param([Parameter(Mandatory = $true)][string]$Value)
+  '"' + ($Value -replace '"', '""') + '"'
+}
+
+$cmdScript = @"
+@echo off
+powershell.exe -NonInteractive -NoLogo -NoProfile -ExecutionPolicy Bypass -File $(ConvertTo-CmdQuoted $runner) > $(ConvertTo-CmdQuoted $stdout) 2> $(ConvertTo-CmdQuoted $stderr)
+set WINVER_EXIT=%ERRORLEVEL%
+> $(ConvertTo-CmdQuoted (Join-Path $jobDir 'exit.code')) echo %WINVER_EXIT%
+exit /b %WINVER_EXIT%
+"@
+
+Set-Content -Path $cmdRunner -Value $cmdScript -Encoding ascii
+
 $process = Start-Process `
-  -FilePath 'powershell.exe' `
-  -ArgumentList @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runner) `
-  -RedirectStandardOutput $stdout `
-  -RedirectStandardError $stderr `
+  -FilePath 'cmd.exe' `
+  -ArgumentList "/d /c $(ConvertTo-CmdQuoted $cmdRunner)" `
   -WindowStyle Hidden `
   -PassThru
 
@@ -56,6 +69,5 @@ $process = Start-Process `
   stderr = $stderr
 } | ConvertTo-Json -Depth 4 | Set-Content -Path $meta -Encoding utf8
 
-Write-Host "Started $jobId (pid $($process.Id))"
-Write-Host "Logs: $jobDir"
-
+Write-Output "Started $jobId (pid $($process.Id))"
+Write-Output "Logs: $jobDir"
