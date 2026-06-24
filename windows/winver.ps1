@@ -9,6 +9,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepoPath = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$Rest = @($Rest | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 
 function Show-Help {
   @'
@@ -84,12 +85,35 @@ function Invoke-LocalAdmin {
 
   $requestId = [guid]::NewGuid().ToString()
   $signature = New-LocalAdminSignature -Action $action -Mode $mode -RequestId $requestId -Command $commandText
-  $brokerArgs = @('-Action', $action, '-Mode', $mode, '-RequestId', $requestId)
-  if ($signature) { $brokerArgs += @('-Signature', $signature) }
-  if ($force) { $brokerArgs += '-Force' }
-  if ($skipBitLocker) { $brokerArgs += '-SkipBitLockerCheck' }
-  if ($commandText) { $brokerArgs += @('-AdminShellCommand', $commandText) }
-  & (Join-Path $RepoPath 'windows\admin\broker.ps1') @brokerArgs
+  $brokerParams = @{
+    Action = $action
+    Mode = $mode
+    RequestId = $requestId
+  }
+  if ($signature) { $brokerParams.Signature = $signature }
+  if ($force) { $brokerParams.Force = $true }
+  if ($skipBitLocker) { $brokerParams.SkipBitLockerCheck = $true }
+  if ($commandText) { $brokerParams.AdminShellCommand = $commandText }
+  & (Join-Path $RepoPath 'windows\admin\broker.ps1') @brokerParams
+}
+
+function Invoke-Doctor {
+  $doctorParams = @{}
+  foreach ($arg in $Rest) {
+    switch ($arg) {
+      '-Json' { $doctorParams.Json = $true }
+      '--json' { $doctorParams.Json = $true }
+      default {
+        if (-not $doctorParams.ContainsKey('RepoPath')) {
+          $doctorParams.RepoPath = $arg
+        } else {
+          throw "Unknown doctor option '$arg'."
+        }
+      }
+    }
+  }
+
+  & (Join-Path $RepoPath 'windows\doctor.ps1') @doctorParams
 }
 
 switch ($Command) {
@@ -97,7 +121,7 @@ switch ($Command) {
     Show-Help
   }
   'doctor' {
-    & (Join-Path $RepoPath 'windows\doctor.ps1') @Rest
+    Invoke-Doctor
   }
   'update' {
     Push-Location $RepoPath
@@ -141,10 +165,10 @@ switch ($Command) {
   }
   'uefi' {
     $action = if ($Rest.Count -gt 0) { $Rest[0] } else { 'inventory' }
-    $uefiArgs = @('-Action', $action)
-    if ($Rest -contains '--json') { $uefiArgs += '-Json' }
-    if ($Rest -contains '--local-confirm') { $uefiArgs += '-LocalConfirm' }
-    & (Join-Path $RepoPath 'windows\admin\uefi.ps1') @uefiArgs
+    $uefiParams = @{ Action = $action }
+    if (($Rest -contains '--json') -or ($Rest -contains '-Json')) { $uefiParams.Json = $true }
+    if (($Rest -contains '--local-confirm') -or ($Rest -contains '-LocalConfirm')) { $uefiParams.LocalConfirm = $true }
+    & (Join-Path $RepoPath 'windows\admin\uefi.ps1') @uefiParams
   }
   default {
     throw "Unknown command '$Command'. Run .\windows\winver.ps1 help"
