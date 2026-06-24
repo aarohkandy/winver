@@ -24,6 +24,7 @@ winver job logs
 winver job monitor
 winver job pull logs
 winver job paths
+winver dashboard
 winver control status
 winver server-mode
 winver admin status
@@ -197,6 +198,16 @@ By default, pulled archives land in `./winver-pulls` from whatever Mac folder yo
 winver logs
 winver logs latest
 ```
+
+### Watch the Surface dashboard
+
+```sh
+winver dashboard --open
+```
+
+This starts a local Mac-only page, usually at `http://127.0.0.1:8787`, with live CPU, memory, thermal sensors, services, worker processes, and recent jobs. It polls through the same secure SSH/Tailscale path as the CLI.
+
+The task list is active: click `Logs` to read a job tail, or `Pull` to save that job's zipped log folder into `./winver-pulls` on the Mac. Finished training outputs still belong under `WINVER_RUNS`; pull those with `winver job pull runs <folder>`.
 
 ### Server-style controls
 

@@ -34,6 +34,14 @@ cd /Users/aaroh/Documents/personal
 ./bin/winver job pull logs latest
 ```
 
+Open the live dashboard when you want the Surface to feel like a little server console:
+
+```sh
+./bin/winver dashboard --open
+```
+
+It updates every few seconds over SSH/Tailscale and shows CPU, memory, thermal readings, services, worker processes, and recent jobs. The task list can open job logs inline and pull a zipped log bundle into `./winver-pulls`.
+
 You can also run one-off commands directly:
 
 ```sh

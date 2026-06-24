@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>winver dashboard</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Surface worker</p>
+          <h1 id="machine-name">winver</h1>
+        </div>
+        <div class="toolbar">
+          <button id="pause-button" type="button" title="Pause or resume live updates">Pause</button>
+          <button id="refresh-button" type="button" title="Refresh now">Refresh</button>
+          <span id="connection-pill" class="pill">connecting</span>
+        </div>
+      </header>
+
+      <section class="metrics" aria-label="Live metrics">
+        <div class="metric">
+          <span>CPU</span>
+          <strong id="cpu-load">--%</strong>
+          <div class="bar"><span id="cpu-bar"></span></div>
+        </div>
+        <div class="metric">
+          <span>Memory</span>
+          <strong id="memory-load">--%</strong>
+          <div class="bar"><span id="memory-bar"></span></div>
+        </div>
+        <div class="metric">
+          <span>Max Temp</span>
+          <strong id="max-temp">-- C</strong>
+          <div class="bar temp"><span id="temp-bar"></span></div>
+        </div>
+        <div class="metric">
+          <span>Battery</span>
+          <strong id="battery">--</strong>
+          <div class="subtle" id="last-updated">waiting</div>
+        </div>
+      </section>
+
+      <section class="layout">
+        <section class="panel tasks-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Tasks</h2>
+              <p>Recent jobs, grouped by what needs attention.</p>
+            </div>
+            <span id="task-summary" class="pill muted">--</span>
+          </div>
+          <div id="task-list" class="task-list"></div>
+        </section>
+
+        <aside class="side">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Services</h2>
+            </div>
+            <div id="services" class="service-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Thermals</h2>
+            </div>
+            <div id="thermal-list" class="thermal-list"></div>
+          </section>
+        </aside>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Processes</h2>
+            <p>Worker-ish processes sorted by total CPU time.</p>
+          </div>
+        </div>
+        <div id="processes" class="process-grid"></div>
+      </section>
+
+      <section class="panel log-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Selected Log</h2>
+            <p id="selected-job">Choose a task to inspect its latest log tail.</p>
+          </div>
+          <span id="pull-status" class="pill muted">ready</span>
+        </div>
+        <pre id="log-output">No task selected.</pre>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

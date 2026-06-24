@@ -1,0 +1,266 @@
+const state = {
+  paused: false,
+  selectedJob: null,
+  timer: null
+};
+
+const els = {
+  machineName: document.querySelector("#machine-name"),
+  connection: document.querySelector("#connection-pill"),
+  pause: document.querySelector("#pause-button"),
+  refresh: document.querySelector("#refresh-button"),
+  cpuLoad: document.querySelector("#cpu-load"),
+  cpuBar: document.querySelector("#cpu-bar"),
+  memoryLoad: document.querySelector("#memory-load"),
+  memoryBar: document.querySelector("#memory-bar"),
+  maxTemp: document.querySelector("#max-temp"),
+  tempBar: document.querySelector("#temp-bar"),
+  battery: document.querySelector("#battery"),
+  lastUpdated: document.querySelector("#last-updated"),
+  taskSummary: document.querySelector("#task-summary"),
+  taskList: document.querySelector("#task-list"),
+  services: document.querySelector("#services"),
+  thermals: document.querySelector("#thermal-list"),
+  processes: document.querySelector("#processes"),
+  selectedJob: document.querySelector("#selected-job"),
+  pullStatus: document.querySelector("#pull-status"),
+  logOutput: document.querySelector("#log-output")
+};
+
+els.pause.addEventListener("click", () => {
+  state.paused = !state.paused;
+  els.pause.textContent = state.paused ? "Resume" : "Pause";
+});
+
+els.refresh.addEventListener("click", () => refresh());
+
+async function refresh() {
+  try {
+    const response = await fetch("/api/snapshot", { cache: "no-store" });
+    const payload = await response.json();
+    if (!payload.ok) throw new Error(payload.error || "Surface unavailable");
+    render(payload.data);
+    setConnection("online", false);
+  } catch (error) {
+    setConnection("offline", true);
+    els.lastUpdated.textContent = error.message;
+  }
+}
+
+function render(data) {
+  const computer = data.computer || {};
+  const cpu = data.cpu || {};
+  const memory = data.memory || {};
+  const thermal = data.thermal || {};
+
+  els.machineName.textContent = computer.name || "winver";
+  setPercent(els.cpuLoad, els.cpuBar, cpu.loadPercent);
+  setPercent(els.memoryLoad, els.memoryBar, memory.usedPercent);
+  setTemperature(thermal.maxCelsius);
+  els.battery.textContent = data.battery ? `${data.battery.percent}%` : "AC";
+  els.lastUpdated.textContent = `Updated ${formatTime(data.collectedAt)}`;
+
+  renderTasks(data.jobs || []);
+  renderServices(data.services || []);
+  renderThermals((thermal.zones || []).filter((zone) => zone.valid));
+  renderProcesses(data.processes || []);
+}
+
+function setConnection(text, bad) {
+  els.connection.textContent = text;
+  els.connection.classList.toggle("bad", bad);
+}
+
+function setPercent(label, bar, value) {
+  const number = clamp(Number(value || 0), 0, 100);
+  label.textContent = `${Math.round(number)}%`;
+  bar.style.width = `${number}%`;
+}
+
+function setTemperature(value) {
+  if (value === null || value === undefined) {
+    els.maxTemp.textContent = "-- C";
+    els.tempBar.style.width = "0%";
+    return;
+  }
+  const number = Number(value);
+  els.maxTemp.textContent = `${number.toFixed(1)} C`;
+  els.tempBar.style.width = `${clamp((number / 100) * 100, 0, 100)}%`;
+}
+
+function renderTasks(jobs) {
+  const running = jobs.filter((job) => job.running);
+  const failed = jobs.filter((job) => !job.running && job.exit !== "pending" && job.exit !== "0");
+  const ordered = [...jobs].sort(compareJobs);
+  els.taskSummary.textContent = `${running.length} running, ${failed.length} failed`;
+  els.taskList.innerHTML = "";
+
+  if (!jobs.length) {
+    els.taskList.append(empty("No jobs yet."));
+    return;
+  }
+
+  for (const job of ordered) {
+    const status = getJobStatus(job);
+    const item = document.createElement("article");
+    item.className = `task ${status.className}`;
+    item.innerHTML = `
+      <div class="task-top">
+        <span class="task-id">${escapeHtml(job.id)}</span>
+        <span class="status ${status.className}">${status.label}</span>
+      </div>
+      <div class="task-command">${escapeHtml(job.commandPreview || "no command")}</div>
+      <div class="task-meta">
+        <span>${escapeHtml(formatTime(job.startedAt))}</span>
+        <span>${formatBytes(job.stdoutBytes)} out / ${formatBytes(job.stderrBytes)} err</span>
+      </div>
+      <div class="task-actions">
+        <button class="task-open" type="button">Logs</button>
+        <button class="task-pull" type="button">Pull</button>
+      </div>
+    `;
+    item.querySelector(".task-open").addEventListener("click", () => loadLogs(job.id));
+    item.querySelector(".task-pull").addEventListener("click", () => pullLogs(job.id));
+    els.taskList.append(item);
+  }
+}
+
+function compareJobs(a, b) {
+  const rank = (job) => {
+    if (job.running) return 0;
+    if (!job.running && job.exit !== "pending" && job.exit !== "0") return 1;
+    if (job.exit === "pending") return 2;
+    return 3;
+  };
+  const diff = rank(a) - rank(b);
+  if (diff !== 0) return diff;
+  return new Date(b.startedAt || 0).getTime() - new Date(a.startedAt || 0).getTime();
+}
+
+function getJobStatus(job) {
+  if (job.running) return { label: "running", className: "running" };
+  if (job.exit === "pending") return { label: "pending", className: "" };
+  if (job.exit === "0") return { label: "done", className: "done" };
+  return { label: `exit ${job.exit}`, className: "failed" };
+}
+
+async function loadLogs(jobId) {
+  state.selectedJob = jobId;
+  els.selectedJob.textContent = jobId;
+  els.logOutput.textContent = "Loading...";
+  try {
+    const response = await fetch(`/api/logs?target=${encodeURIComponent(jobId)}`, { cache: "no-store" });
+    const payload = await response.json();
+    if (!payload.ok) throw new Error(payload.error || "Could not read logs");
+    els.logOutput.textContent = payload.text || "(empty)";
+  } catch (error) {
+    els.logOutput.textContent = error.message;
+  }
+}
+
+async function pullLogs(jobId) {
+  els.pullStatus.textContent = "pulling";
+  els.pullStatus.classList.remove("bad");
+  try {
+    const response = await fetch(`/api/pull-log?target=${encodeURIComponent(jobId)}`, {
+      method: "POST",
+      headers: { "X-Winver-Dashboard": "1" },
+      cache: "no-store"
+    });
+    const payload = await response.json();
+    if (!payload.ok) throw new Error(payload.error || "Could not pull logs");
+    els.pullStatus.textContent = payload.name || "pulled";
+    els.selectedJob.textContent = jobId;
+    els.logOutput.textContent = `Pulled to ${payload.path}`;
+  } catch (error) {
+    els.pullStatus.textContent = "pull failed";
+    els.pullStatus.classList.add("bad");
+    els.logOutput.textContent = error.message;
+  }
+}
+
+function renderServices(services) {
+  els.services.innerHTML = "";
+  if (!services.length) {
+    els.services.append(empty("No service data."));
+    return;
+  }
+  for (const service of services) {
+    els.services.append(row(service.name, `${service.status} / ${service.startType}`));
+  }
+}
+
+function renderThermals(zones) {
+  els.thermals.innerHTML = "";
+  if (!zones.length) {
+    els.thermals.append(empty("No thermal sensors."));
+    return;
+  }
+  for (const zone of zones) {
+    els.thermals.append(row(shortZone(zone.zone), `${Number(zone.celsius).toFixed(1)} C`));
+  }
+}
+
+function renderProcesses(processes) {
+  els.processes.innerHTML = "";
+  if (!processes.length) {
+    els.processes.append(empty("No worker processes."));
+    return;
+  }
+  for (const process of processes) {
+    els.processes.append(row(`${process.name} #${process.id}`, `${process.cpuSeconds}s CPU / ${process.memoryMB} MB`));
+  }
+}
+
+function row(label, value) {
+  const el = document.createElement("div");
+  el.className = "row";
+  el.innerHTML = `<strong>${escapeHtml(label)}</strong><span class="value">${escapeHtml(value)}</span>`;
+  return el;
+}
+
+function empty(text) {
+  const el = document.createElement("div");
+  el.className = "subtle";
+  el.textContent = text;
+  return el;
+}
+
+function formatTime(value) {
+  if (!value) return "unknown";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+}
+
+function formatBytes(value) {
+  const number = Number(value || 0);
+  if (number < 1024) return `${number} B`;
+  if (number < 1024 * 1024) return `${(number / 1024).toFixed(1)} KB`;
+  return `${(number / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function shortZone(value) {
+  const text = String(value || "");
+  const match = text.match(/MSHW[0-9A-F]+\\(.+)$/i);
+  return match ? match[1] : text;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+refresh();
+state.timer = setInterval(() => {
+  if (!state.paused) refresh();
+}, 3500);
