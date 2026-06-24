@@ -77,7 +77,7 @@ function Get-WinverJobs {
     $stdoutBytes = if (Test-Path -LiteralPath $stdoutPath) { (Get-Item -LiteralPath $stdoutPath).Length } else { 0 }
     $stderrBytes = if (Test-Path -LiteralPath $stderrPath) { (Get-Item -LiteralPath $stderrPath).Length } else { 0 }
     $lastOutput = if (Test-Path -LiteralPath $stdoutPath) {
-      @(Get-Content -LiteralPath $stdoutPath -Tail 6 -ErrorAction SilentlyContinue)
+      @(Get-Content -LiteralPath $stdoutPath -Tail 6 -ErrorAction SilentlyContinue | ForEach-Object { [string]$_ })
     } else {
       @()
     }
