@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { psQuote, remoteRepoExpression } = require("../lib/config");
-const { powershellCommand, psArg, repoCommand, repoScript, sshArgs } = require("../lib/remote");
+const { powershellCommand, psArg, repoCommand, repoScript, runLocal, sshArgs } = require("../lib/remote");
 
 test("psQuote escapes single quotes for PowerShell", () => {
   assert.equal(psQuote("C:\\Users\\Aaroh's PC\\winver"), "'C:\\Users\\Aaroh''s PC\\winver'");
@@ -56,4 +56,15 @@ test("repoScript invokes scripts below the remote repo", () => {
 test("PowerShell flags stay unquoted while values are quoted", () => {
   assert.equal(psArg("-Command"), "-Command");
   assert.equal(psArg("npm run build"), "'npm run build'");
+});
+
+test("runLocal can time out a stuck command", async () => {
+  const result = await runLocal(
+    process.execPath,
+    ["-e", "setTimeout(() => {}, 10000)"],
+    { capture: true, allowFailure: true, timeoutMs: 50 }
+  );
+  assert.equal(result.code, 124);
+  assert.equal(result.timedOut, true);
+  assert.match(result.stderr, /Timed out/);
 });
