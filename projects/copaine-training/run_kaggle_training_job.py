@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -177,6 +178,10 @@ def ensure_packages(config: dict | None = None) -> None:
     packages.extend(REQUIRED_PACKAGES[1:])
 
     subprocess.run([sys.executable, "-m", "pip", "install", *packages], check=True)
+    print("Installed or updated training packages; restarting with the resolved versions.")
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os.execv(sys.executable, [sys.executable, *sys.argv])
 
 
 def find_dataset_dir(config: dict | None = None) -> Path:
@@ -533,7 +538,7 @@ def run_manual_eval(
 
 def main() -> None:
     config = runtime_config()
-    ensure_packages()
+    ensure_packages(config)
 
     dataset_dir = find_dataset_dir(config)
     output_dir = Path(config["output_dir"])
