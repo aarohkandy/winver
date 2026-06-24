@@ -9,7 +9,7 @@ param(
   [string]$Preset = 'medium',
 
   [Parameter(Position = 2)]
-  [ValidateSet('train', 'preflight')]
+  [ValidateSet('train', 'preflight', 'kaggle')]
   [string]$Mode = 'train',
 
   [Parameter(Position = 3)]
@@ -65,6 +65,29 @@ function Count-Jsonl {
   return $count
 }
 
+function Invoke-Checked {
+  param(
+    [string]$FilePath,
+    [string[]]$Arguments,
+    [string]$Label
+  )
+  Write-Output "command=$FilePath $($Arguments -join ' ')"
+  & $FilePath @Arguments
+  if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+    throw "$Label failed with exit code $LASTEXITCODE"
+  }
+}
+
+function Get-KaggleOwner {
+  $KaggleJson = Join-Path $env:USERPROFILE '.kaggle\kaggle.json'
+  Require-File $KaggleJson
+  $KaggleConfig = Get-Content -LiteralPath $KaggleJson -Encoding UTF8 | ConvertFrom-Json
+  if (-not $KaggleConfig.username) {
+    throw "Missing username in $KaggleJson"
+  }
+  return [string]$KaggleConfig.username
+}
+
 if (-not $env:WINVER_DATA -or -not $env:WINVER_RUNS -or -not $env:WINVER_LOGS) {
   throw 'This script must run through `winver job start`, because it needs WINVER_DATA, WINVER_RUNS, and WINVER_LOGS.'
 }
@@ -79,6 +102,86 @@ if (-not $DatasetDir) {
 $RunStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $RunRoot = Join-Path $env:WINVER_RUNS 'copaine'
 $RunDir = Join-Path $RunRoot "$Preset-$RunStamp"
+
+function Start-KaggleTraining {
+  param(
+    [string]$DatasetPath,
+    [string]$TrainingPreset
+  )
+
+  if ($TrainFileName -ne 'train_mixed.jsonl' -or $ValFileName -ne 'val_mixed.jsonl') {
+    throw 'Kaggle mode expects train_mixed.jsonl and val_mixed.jsonl.'
+  }
+
+  Require-File (Join-Path $ProjectRoot 'prepare_kaggle_bundle.py')
+  Require-File (Join-Path $ProjectRoot 'run_kaggle_training_job.py')
+
+  $Kaggle = Get-Command kaggle -ErrorAction Stop
+  $Python = Get-Command python -ErrorAction Stop
+  $Owner = Get-KaggleOwner
+  $BundleDir = Join-Path $RunRoot "kaggle_bundle_$TrainingPreset-$RunStamp"
+
+  Write-Step 'Prepare Kaggle bundle'
+  New-Item -ItemType Directory -Force -Path $RunRoot | Out-Null
+  Invoke-Checked $Python.Source @(
+    (Join-Path $ProjectRoot 'prepare_kaggle_bundle.py'),
+    '--training-dir', $DatasetPath,
+    '--bundle-dir', $BundleDir,
+    '--owner-slug', $Owner,
+    '--dataset-slug', 'support-bot-style-pack',
+    '--preset', $TrainingPreset
+  ) 'prepare_kaggle_bundle.py'
+
+  $SummaryPath = Join-Path $BundleDir 'bundle_summary.json'
+  Require-File $SummaryPath
+  $Summary = Get-Content -LiteralPath $SummaryPath -Encoding UTF8 | ConvertFrom-Json
+  $DatasetBundleDir = [string]$Summary.dataset_dir
+  $KernelBundleDir = [string]$Summary.kernel_dir
+  $DatasetRef = [string]$Summary.dataset_ref
+  $KernelRef = [string]$Summary.kernel_ref
+
+  Write-Step 'Upload Kaggle dataset'
+  $CreateOutput = & $Kaggle.Source datasets create -p $DatasetBundleDir --dir-mode zip 2>&1
+  $CreateExit = $LASTEXITCODE
+  $CreateText = ($CreateOutput | Out-String).Trim()
+  if ($CreateText) { Write-Output $CreateText }
+  if ($CreateExit -ne 0) {
+    $Lowered = $CreateText.ToLowerInvariant()
+    if ($Lowered.Contains('already exists') -or $Lowered.Contains('already in use')) {
+      Invoke-Checked $Kaggle.Source @(
+        'datasets', 'version',
+        '-p', $DatasetBundleDir,
+        '-m', "refresh Copaine $TrainingPreset training pack $RunStamp",
+        '--dir-mode', 'zip'
+      ) 'kaggle datasets version'
+    } else {
+      throw "kaggle datasets create failed with exit code $CreateExit"
+    }
+  }
+
+  Write-Step 'Push Kaggle kernel'
+  Invoke-Checked $Kaggle.Source @(
+    'kernels', 'push',
+    '-p', $KernelBundleDir,
+    '--accelerator', 'NvidiaTeslaT4'
+  ) 'kaggle kernels push'
+
+  $LaunchState = [ordered]@{
+    preset = $TrainingPreset
+    dataset_ref = $DatasetRef
+    kernel_ref = $KernelRef
+    bundle_dir = $BundleDir
+    launched_at = (Get-Date).ToString('s')
+  }
+  $LaunchPath = Join-Path $BundleDir 'surface_launch_state.json'
+  $LaunchState | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $LaunchPath -Encoding UTF8
+
+  Write-Step 'Kaggle launch submitted'
+  Write-Output "dataset_ref=$DatasetRef"
+  Write-Output "kernel_ref=$KernelRef"
+  Write-Output "bundle_dir=$BundleDir"
+  Write-Output "status_command=kaggle kernels status $KernelRef"
+}
 
 Write-Step 'Job context'
 Write-Output "job=$env:WINVER_JOB_NAME"
@@ -145,6 +248,11 @@ try {
   Write-Output "train_rows=$TrainCount"
   Write-Output "val_rows=$ValCount"
   Get-ChildItem -LiteralPath $DatasetDir -File | Select-Object Name,Length,LastWriteTime | Format-Table -AutoSize
+
+  if ($Mode -eq 'kaggle') {
+    Start-KaggleTraining -DatasetPath $DatasetDir -TrainingPreset $Preset
+    exit 0
+  }
 
   Write-Step 'Windows GPU check'
   $VideoControllers = @(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name)
