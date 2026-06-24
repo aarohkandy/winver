@@ -117,9 +117,11 @@ try {
   }
 
   Require-File $VenvPython
+  New-Item -ItemType Directory -Force -Path $RunDir, $DataRoot, $NativeRunsRoot, $ConfigDir | Out-Null
 
   Write-Step 'Python and hardware check'
-  $HardwareJson = & $VenvPython -c @'
+  $HardwareCheck = Join-Path $ConfigDir 'hardware_check.py'
+  Set-Content -LiteralPath $HardwareCheck -Encoding UTF8 -Value @'
 import json
 import importlib.util
 
@@ -137,6 +139,7 @@ if not missing:
     })
 print(json.dumps(payload))
 '@
+  $HardwareJson = & $VenvPython $HardwareCheck
   if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   Write-Output $HardwareJson
   $HardwareInfo = $HardwareJson | ConvertFrom-Json
@@ -146,8 +149,6 @@ print(json.dumps(payload))
   if (-not $HardwareInfo.cuda_available -and -not $AllowCpu) {
     throw 'CUDA is not available. Use allow-cpu for this smoke run or move to a CUDA Windows box.'
   }
-
-  New-Item -ItemType Directory -Force -Path $RunDir, $DataRoot, $NativeRunsRoot, $ConfigDir | Out-Null
 
   $AutoencoderConfig = Join-Path $ConfigDir 'autoencoder_surface.yaml'
   Set-Content -LiteralPath $AutoencoderConfig -Encoding UTF8 -Value @'
