@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 function Get-Thermal {
   $zones = Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction SilentlyContinue
   if (-not $zones) {
-    Write-Host "Thermal sensors not exposed by Windows on this device."
+    Write-Output "Thermal sensors not exposed by Windows on this device."
     return
   }
   $zones | ForEach-Object {
@@ -22,16 +22,16 @@ function Get-Thermal {
 }
 
 function Show-Status {
-  Write-Host ""
-  Write-Host "winver Surface status" -ForegroundColor Cyan
-  Write-Host "====================="
+  Write-Output ""
+  Write-Output "winver Surface status"
+  Write-Output "====================="
   Get-ComputerInfo | Select-Object CsName, WindowsProductName, OsVersion, CsProcessors, CsTotalPhysicalMemory | Format-List
   Get-Service sshd, Tailscale -ErrorAction SilentlyContinue | Format-Table Name, Status, StartType -AutoSize
-  Write-Host ""
+  Write-Output ""
   powercfg /getactivescheme
-  Write-Host ""
+  Write-Output ""
   Get-Process powershell, pwsh, node, codex -ErrorAction SilentlyContinue | Sort-Object CPU -Descending | Select-Object -First 12 Name, Id, CPU, WorkingSet | Format-Table -AutoSize
-  Write-Host ""
+  Write-Output ""
   Get-Thermal
 }
 
@@ -50,13 +50,13 @@ switch ($Action) {
     powercfg /change hibernate-timeout-ac 0 | Out-Null
     powercfg /change monitor-timeout-ac 10 | Out-Null
     powercfg /setactive SCHEME_MIN | Out-Null
-    Write-Host "Server mode enabled: plugged-in sleep disabled, display timeout kept short, high performance active." -ForegroundColor Green
+    Write-Output "Server mode enabled: plugged-in sleep disabled, display timeout kept short, high performance active."
   }
   'balanced' {
     powercfg /setactive SCHEME_BALANCED | Out-Null
     powercfg /change standby-timeout-ac 30 | Out-Null
     powercfg /change monitor-timeout-ac 10 | Out-Null
-    Write-Host "Balanced mode restored." -ForegroundColor Green
+    Write-Output "Balanced mode restored."
   }
   'reboot' {
     Restart-Computer -Force
@@ -65,4 +65,3 @@ switch ($Action) {
     Stop-Computer -Force
   }
 }
-
