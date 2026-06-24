@@ -30,6 +30,8 @@ cd /Users/aaroh/Documents/personal
 ./bin/winver job paths
 ./bin/winver job start hello
 ./bin/winver job logs
+./bin/winver job monitor latest
+./bin/winver job pull logs latest
 ```
 
 You can also run one-off commands directly:
@@ -82,6 +84,8 @@ git commit -m "Add myproject Surface job"
 git push
 ./bin/winver job start myproject -- main
 ./bin/winver job logs
+./bin/winver job monitor latest --interval 10
+./bin/winver job pull runs myproject ./surface-downloads
 ```
 
 ## Using it from inside any project folder
@@ -104,6 +108,8 @@ Then any project can use:
 ```sh
 winver job start myproject -- main
 winver job logs
+winver job monitor latest
+winver job pull runs myproject
 ```
 
 ## For AI training jobs
@@ -161,6 +167,24 @@ winver job logs
 winver job logs list
 winver job logs JOB_ID
 ```
+
+Use monitor when you want it to keep checking until the job exits:
+
+```sh
+winver job monitor latest
+winver job monitor JOB_ID --interval 10 --tail 80
+```
+
+Pull zipped logs, outputs, or data back to the Mac:
+
+```sh
+winver job pull logs latest
+winver job pull logs JOB_ID ./surface-downloads
+winver job pull runs myproject ./surface-downloads
+winver job pull data datasets/mydata ./surface-downloads
+```
+
+If you skip the local destination, archives land in `./winver-pulls` in your current Mac folder.
 
 Use paths when you forget where heavy files live:
 

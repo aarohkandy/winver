@@ -72,6 +72,37 @@ Describe 'winver Windows scripts' {
     $joined | Should -Match 'args=--version'
   }
 
+  It 'job.ps1 reports job status' {
+    $home = Join-Path $TestDrive '.winver-status'
+    $jobDir = Join-Path $home 'logs\20260101-000000-hello'
+    New-Item -ItemType Directory -Force -Path $jobDir | Out-Null
+    @{
+      id = '20260101-000000-hello'
+      pid = 0
+      startedAt = '2026-01-01T00:00:00Z'
+    } | ConvertTo-Json | Set-Content -Path (Join-Path $jobDir 'meta.json') -Encoding utf8
+    Set-Content -Path (Join-Path $jobDir 'exit.code') -Value '0'
+    Set-Content -Path (Join-Path $jobDir 'stdout.log') -Value 'ok'
+    Set-Content -Path (Join-Path $jobDir 'stderr.log') -Value ''
+
+    $result = & (Join-Path $RepoRoot 'windows\job.ps1') -Action status -Target '20260101-000000-hello' -WinverHome $home
+    $joined = $result -join "`n"
+    $joined | Should -Match 'id=20260101-000000-hello'
+    $joined | Should -Match 'exit=0'
+  }
+
+  It 'job.ps1 archives a runs folder' {
+    $home = Join-Path $TestDrive '.winver-archive'
+    $runDir = Join-Path $home 'runs\myrun'
+    New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+    Set-Content -Path (Join-Path $runDir 'result.txt') -Value 'ok'
+
+    $result = & (Join-Path $RepoRoot 'windows\job.ps1') -Action archive -Kind runs -Target myrun -WinverHome $home
+    $archiveLine = $result | Where-Object { $_ -like 'archive=*' } | Select-Object -First 1
+    $archive = $archiveLine.Substring('archive='.Length)
+    Test-Path -LiteralPath $archive | Should -BeTrue
+  }
+
   It 'control.ps1 parses without executing' {
     $tokens = $null
     $errors = $null

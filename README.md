@@ -21,6 +21,8 @@ winver logs
 winver job list
 winver job start hello
 winver job logs
+winver job monitor
+winver job pull logs
 winver job paths
 winver control status
 winver server-mode
@@ -155,6 +157,9 @@ winver job list
 winver job start hello
 winver job start python -- --version
 winver job logs
+winver job monitor
+winver job pull logs
+winver job pull runs myproject
 winver job paths
 ```
 
@@ -169,6 +174,22 @@ Job scripts receive:
 - `WINVER_JOB_NAME`
 
 Keep scripts, tiny configs, and docs in GitHub. Keep datasets, model weights, checkpoints, generated outputs, caches, and tokens under `%USERPROFILE%\.winver` on the Surface. Local secrets can go in `%USERPROFILE%\.winver\env.ps1`; never commit them.
+
+Monitor a job until it exits:
+
+```sh
+winver job monitor latest --interval 10 --tail 40
+```
+
+Pull zipped logs or outputs back to the Mac:
+
+```sh
+winver job pull logs latest
+winver job pull runs myproject ./surface-downloads
+winver job pull data datasets/mydata ./surface-downloads
+```
+
+By default, pulled archives land in `./winver-pulls` from whatever Mac folder you run the command in.
 
 ### Read logs
 

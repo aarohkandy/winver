@@ -1,6 +1,8 @@
 .DS_Store
 node_modules/
 coverage/
+winver-pulls/
+surface-downloads/
 .env
 .env.*
 !.env.example
