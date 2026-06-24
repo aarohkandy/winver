@@ -34,7 +34,7 @@ DEFAULT_RUNTIME_CONFIG = {
 }
 
 REQUIRED_PACKAGES = (
-    "transformers>=4.56.0",
+    "transformers>=5.10.1",
     "datasets>=3.2.0",
     "peft>=0.14.0",
     "trl>=0.15.2",
@@ -42,7 +42,7 @@ REQUIRED_PACKAGES = (
     "bitsandbytes>=0.45.3",
 )
 
-GEMMA4_TRANSFORMERS_PACKAGE = "git+https://github.com/huggingface/transformers.git"
+GEMMA4_MIN_TRANSFORMERS_VERSION = "5.10.1"
 
 FALLBACK_PRIVACY_TERMS = [
     "your full name",
@@ -157,11 +157,15 @@ def ensure_packages(config: dict | None = None) -> None:
 
     needs_gemma4_support = False
     model_id = (config or {}).get("model_id", "").lower()
-    if "gemma-4" in model_id:
+    if "gemma-4" in model_id or "gemma4" in model_id:
         try:
+            import transformers
+            from packaging.version import Version
             from transformers.models.auto.configuration_auto import CONFIG_MAPPING
 
-            needs_gemma4_support = "gemma4" not in CONFIG_MAPPING
+            installed = Version(transformers.__version__.split("+", 1)[0])
+            minimum = Version(GEMMA4_MIN_TRANSFORMERS_VERSION)
+            needs_gemma4_support = installed < minimum or "gemma4" not in CONFIG_MAPPING
         except Exception:
             needs_gemma4_support = True
 
@@ -169,10 +173,7 @@ def ensure_packages(config: dict | None = None) -> None:
         return
 
     packages = []
-    if needs_gemma4_support:
-        packages.append(GEMMA4_TRANSFORMERS_PACKAGE)
-    else:
-        packages.append(REQUIRED_PACKAGES[0])
+    packages.append(REQUIRED_PACKAGES[0])
     packages.extend(REQUIRED_PACKAGES[1:])
 
     subprocess.run([sys.executable, "-m", "pip", "install", *packages], check=True)
