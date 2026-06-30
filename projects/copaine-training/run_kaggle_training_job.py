@@ -31,6 +31,7 @@ DEFAULT_RUNTIME_CONFIG = {
     "save_steps": 25,
     "eval_steps": 50,
     "disable_thinking": True,
+    "optim": "paged_adamw_8bit",
 }
 
 REQUIRED_PACKAGES = (
@@ -211,7 +212,24 @@ def runtime_config() -> dict:
     return config
 
 
-def ensure_packages(config: dict | None = None) -> None:
+def log_stage(output_dir: Path, stage: str, **details) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    row = {"stage": stage, **details}
+    line = json.dumps(row, ensure_ascii=True, sort_keys=True)
+    for path in (output_dir / "stage_log.jsonl", Path("/kaggle/working/copaine_stage_log.jsonl")):
+        if not path.parent.exists():
+            continue
+        try:
+            with path.open("a", encoding="utf-8", newline="\n") as handle:
+                handle.write(line + "\n")
+        except OSError:
+            continue
+    print(f"[copaine-stage] {line}", flush=True)
+
+
+def ensure_packages(config: dict | None = None, output_dir: Path | None = None) -> None:
+    if output_dir is not None:
+        log_stage(output_dir, "ensure_packages_start")
     missing = []
     for module_name in ("transformers", "datasets", "peft", "trl", "accelerate", "bitsandbytes"):
         try:
@@ -230,6 +248,8 @@ def ensure_packages(config: dict | None = None) -> None:
             needs_gemma4_support = True
 
     if not missing and not needs_gemma4_support:
+        if output_dir is not None:
+            log_stage(output_dir, "ensure_packages_done", installed=False)
         return
 
     packages = []
@@ -240,6 +260,8 @@ def ensure_packages(config: dict | None = None) -> None:
     packages.extend(REQUIRED_PACKAGES[1:])
 
     subprocess.run([sys.executable, "-m", "pip", "install", *packages], check=True)
+    if output_dir is not None:
+        log_stage(output_dir, "ensure_packages_done", installed=True, packages=packages)
 
 
 def find_dataset_dir(config: dict | None = None) -> Path:
@@ -484,24 +506,33 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
     import torch
     from datasets import load_dataset
     from peft import LoraConfig, prepare_model_for_kbit_training
+    from transformers import TrainerCallback
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, set_seed
     from trl import SFTConfig, SFTTrainer
 
     set_seed(42)
     output_dir.mkdir(parents=True, exist_ok=True)
+    log_stage(output_dir, "train_adapter_start")
 
     has_cuda = torch.cuda.is_available()
     if not has_cuda:
+        log_stage(output_dir, "cuda_missing")
         raise SystemExit("Kaggle runner expected a GPU, but CUDA is not available.")
 
     compute_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
     use_bf16 = compute_dtype == torch.bfloat16
     use_fp16 = not use_bf16
+    gpu_name = torch.cuda.get_device_name(0)
+    total_gb = round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
+    log_stage(output_dir, "cuda_ready", gpu_name=gpu_name, total_gb=total_gb, dtype=str(compute_dtype))
 
+    log_stage(output_dir, "tokenizer_load_start", model_id=config["model_id"])
     tokenizer = AutoTokenizer.from_pretrained(config["model_id"], trust_remote_code=False)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    log_stage(output_dir, "tokenizer_load_done")
 
+    log_stage(output_dir, "model_load_start", model_id=config["model_id"])
     model = AutoModelForCausalLM.from_pretrained(
         config["model_id"],
         torch_dtype=compute_dtype,
@@ -514,15 +545,19 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
             bnb_4bit_compute_dtype=compute_dtype,
         ),
     )
+    log_stage(output_dir, "model_load_done")
 
     if hasattr(model, "gradient_checkpointing_enable"):
         model.gradient_checkpointing_enable()
     if hasattr(model, "config"):
         model.config.use_cache = False
     model = prepare_model_for_kbit_training(model)
+    log_stage(output_dir, "kbit_prepare_done")
 
+    log_stage(output_dir, "dataset_load_start")
     train_dataset = load_dataset("json", data_files=str(dataset_dir / "train_mixed.jsonl"), split="train")
     eval_dataset = load_dataset("json", data_files=str(dataset_dir / "val_mixed.jsonl"), split="train")
+    log_stage(output_dir, "dataset_load_done", train_examples=len(train_dataset), eval_examples=len(eval_dataset))
 
     def to_prompt_completion(example: dict) -> dict:
         prompt = apply_chat_template(tokenizer, example["messages"], disable_thinking=config.get("disable_thinking", False))
@@ -531,8 +566,10 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
             "completion": example["target"] + tokenizer.eos_token,
         }
 
+    log_stage(output_dir, "dataset_map_start")
     train_dataset = train_dataset.map(to_prompt_completion, remove_columns=train_dataset.column_names)
     eval_dataset = eval_dataset.map(to_prompt_completion, remove_columns=eval_dataset.column_names)
+    log_stage(output_dir, "dataset_map_done", train_examples=len(train_dataset), eval_examples=len(eval_dataset))
 
     peft_config = LoraConfig(
         r=config["lora_r"],
@@ -559,16 +596,33 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
         eval_steps=config["eval_steps"] if config["eval_steps"] > 0 else None,
         save_total_limit=2,
         lr_scheduler_type="cosine",
-        optim="adamw_torch",
+        optim=config.get("optim", "paged_adamw_8bit"),
         max_grad_norm=0.3,
         bf16=use_bf16,
         fp16=use_fp16,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         report_to=[],
         completion_only_loss=True,
         packing=False,
         dataset_kwargs={"add_special_tokens": False},
     )
 
+    class StageCallback(TrainerCallback):
+        def on_train_begin(self, args, state, control, **kwargs):
+            log_stage(output_dir, "trainer_train_begin", max_steps=state.max_steps)
+
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            clean_logs = {key: float(value) if isinstance(value, (int, float)) else value for key, value in (logs or {}).items()}
+            log_stage(output_dir, "trainer_log", global_step=state.global_step, **clean_logs)
+
+        def on_save(self, args, state, control, **kwargs):
+            log_stage(output_dir, "trainer_save", global_step=state.global_step)
+
+        def on_train_end(self, args, state, control, **kwargs):
+            log_stage(output_dir, "trainer_train_end", global_step=state.global_step)
+
+    log_stage(output_dir, "trainer_build_start")
     trainer = SFTTrainer(
         model=model,
         args=training_args,
@@ -576,7 +630,9 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
         eval_dataset=eval_dataset,
         processing_class=tokenizer,
         peft_config=peft_config,
+        callbacks=[StageCallback()],
     )
+    log_stage(output_dir, "trainer_build_done")
 
     run_metadata = {
         "preset": config["preset"],
@@ -591,10 +647,13 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
     }
     (output_dir / "run_metadata.json").write_text(json.dumps(run_metadata, indent=2) + "\n", encoding="utf-8")
 
+    log_stage(output_dir, "trainer_train_call")
     trainer.train()
     adapter_dir = output_dir / "adapter"
+    log_stage(output_dir, "adapter_save_start", adapter_dir=str(adapter_dir))
     trainer.save_model(str(adapter_dir))
     tokenizer.save_pretrained(str(adapter_dir))
+    log_stage(output_dir, "adapter_save_done", adapter_dir=str(adapter_dir))
     return trainer.model, tokenizer, adapter_dir
 
 
@@ -725,20 +784,30 @@ def run_human_feel_eval(
 
 def main() -> None:
     config = runtime_config()
-    ensure_packages()
-
-    dataset_dir = find_dataset_dir(config)
     output_dir = Path(config["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
+    log_stage(output_dir, "main_start", preset=config["preset"], model_id=config["model_id"])
+
+    ensure_packages(config, output_dir)
+
+    log_stage(output_dir, "dataset_find_start")
+    dataset_dir = find_dataset_dir(config)
+    log_stage(output_dir, "dataset_find_done", dataset_dir=str(dataset_dir))
 
     model, tokenizer, adapter_dir = train_adapter(config, dataset_dir, output_dir)
 
+    log_stage(output_dir, "manual_eval_start")
     eval_output = Path("/kaggle/working/manual_eval_results.jsonl")
     eval_summary = run_manual_eval(model, tokenizer, config, dataset_dir, eval_output)
+    log_stage(output_dir, "manual_eval_done", **eval_summary)
     human_eval_output = Path("/kaggle/working/human_feel_eval_results.jsonl")
+    log_stage(output_dir, "human_feel_eval_start")
     human_eval_summary = run_human_feel_eval(model, tokenizer, config, dataset_dir, human_eval_output)
+    log_stage(output_dir, "human_feel_eval_done", **human_eval_summary)
 
+    log_stage(output_dir, "adapter_zip_start")
     adapter_zip = zip_directory(adapter_dir, Path("/kaggle/working") / f"{output_dir.name}-adapter.zip")
+    log_stage(output_dir, "adapter_zip_done", adapter_zip=str(adapter_zip))
 
     summary = {
         "preset": config["preset"],
@@ -753,6 +822,7 @@ def main() -> None:
     }
     Path("/kaggle/working/run_summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2))
+    log_stage(output_dir, "main_done")
 
 
 if __name__ == "__main__":
