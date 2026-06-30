@@ -213,10 +213,10 @@ The task list is active: click `Logs` to read a job tail, or `Pull` to save that
 To keep the localhost dashboard alive in the background on the Mac:
 
 ```sh
-./mac/dashboard-watch.sh start
+./mac/dashboard-agent.sh install
 ```
 
-This starts a small watcher that restarts the local dashboard if it exits. Stop it with `./mac/dashboard-watch.sh stop`.
+This installs a per-user macOS LaunchAgent that runs the dashboard from a copied runtime under `~/Library/Application Support/winver-dashboard`, which avoids macOS privacy blocking background execution from `Documents`. Stop it with `./mac/dashboard-agent.sh uninstall`.
 
 ### Server-style controls
 
