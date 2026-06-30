@@ -220,6 +220,20 @@ try {
   }
   Require-Directory $DatasetDir
 
+  if ($Preset -eq 'empathy' -and -not (Test-Path -LiteralPath (Join-Path $DatasetDir 'human_feel_eval_prompts.jsonl') -PathType Leaf)) {
+    Write-Step 'Augment dataset for human-feel training'
+    Require-File (Join-Path $ProjectRoot 'augment_training_assets.py')
+    $AugmentedDatasetDir = Join-Path $RunRoot "training_assets_$Preset-$RunStamp"
+    $PythonForAssets = (Get-Command python -ErrorAction Stop).Source
+    Invoke-Checked $PythonForAssets @(
+      (Join-Path $ProjectRoot 'augment_training_assets.py'),
+      '--input-dir', $DatasetDir,
+      '--output-dir', $AugmentedDatasetDir
+    ) 'augment_training_assets.py'
+    $DatasetDir = $AugmentedDatasetDir
+    Write-Output "augmented_dataset_dir=$DatasetDir"
+  }
+
   $TrainFileName = 'train_mixed.jsonl'
   $ValFileName = 'val_mixed.jsonl'
   if (-not (Test-Path -LiteralPath (Join-Path $DatasetDir $TrainFileName) -PathType Leaf) -and
