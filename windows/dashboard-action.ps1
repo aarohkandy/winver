@@ -55,6 +55,21 @@ function Stop-AllowedProcess {
   } | ConvertTo-Json -Depth 3
 }
 
+function Stop-ProcessTree {
+  param([int]$RootProcessId)
+  $stopped = New-Object System.Collections.Generic.List[int]
+  $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$RootProcessId" -ErrorAction SilentlyContinue)
+  foreach ($child in $children) {
+    Stop-ProcessTree -RootProcessId ([int]$child.ProcessId) | ForEach-Object { $stopped.Add([int]$_) }
+  }
+  $process = Get-Process -Id $RootProcessId -ErrorAction SilentlyContinue
+  if ($process) {
+    Stop-Process -Id $RootProcessId -Force -ErrorAction Stop
+    $stopped.Add($RootProcessId)
+  }
+  $stopped
+}
+
 function Stop-JobProcess {
   param([string]$JobTarget)
   $jobDir = Get-JobDirectory $JobTarget
@@ -78,13 +93,14 @@ function Stop-JobProcess {
     return
   }
 
-  Stop-AllowedProcess -ProcessId $processId | Out-Null
+  $stoppedIds = @(Stop-ProcessTree -RootProcessId $processId)
   [pscustomobject]@{
     ok = $true
     action = 'stop-job'
     id = (Split-Path -Leaf $jobDir)
     pid = $processId
     stopped = $true
+    stoppedPids = $stoppedIds
   } | ConvertTo-Json -Depth 3
 }
 
