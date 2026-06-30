@@ -38,6 +38,7 @@ DEFAULT_RUNTIME_CONFIG = {
     "force_fp16": False,
     "lora_target_modules": "all-linear",
     "single_gpu": True,
+    "disable_trainer_amp": False,
 }
 
 REQUIRED_PACKAGES = (
@@ -528,8 +529,8 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
     compute_dtype = torch.float16 if config.get("force_fp16") else (
         torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
     )
-    use_bf16 = compute_dtype == torch.bfloat16
-    use_fp16 = not use_bf16
+    use_bf16 = False if config.get("disable_trainer_amp") else compute_dtype == torch.bfloat16
+    use_fp16 = False if config.get("disable_trainer_amp") else not use_bf16
     gpu_name = torch.cuda.get_device_name(0)
     total_gb = round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
     log_stage(
@@ -666,6 +667,7 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
         "lora_target_modules": config.get("lora_target_modules", "all-linear"),
         "force_fp16": config.get("force_fp16", False),
         "single_gpu": config.get("single_gpu", True),
+        "disable_trainer_amp": config.get("disable_trainer_amp", False),
     }
     (output_dir / "run_metadata.json").write_text(json.dumps(run_metadata, indent=2) + "\n", encoding="utf-8")
 
