@@ -70,6 +70,12 @@ function Stop-ProcessTree {
   $stopped
 }
 
+function Write-JobStoppedExit {
+  param([string]$JobDirectory)
+  $exitPath = Join-Path $JobDirectory 'exit.code'
+  Set-Content -LiteralPath $exitPath -Value 'stopped' -Encoding ascii
+}
+
 function Stop-JobProcess {
   param([string]$JobTarget)
   $jobDir = Get-JobDirectory $JobTarget
@@ -82,6 +88,7 @@ function Stop-JobProcess {
 
   $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
   if (-not $process) {
+    Write-JobStoppedExit -JobDirectory $jobDir
     [pscustomobject]@{
       ok = $true
       action = 'stop-job'
@@ -89,11 +96,13 @@ function Stop-JobProcess {
       pid = $processId
       stopped = $false
       message = 'Process is already gone.'
+      exit = 'stopped'
     } | ConvertTo-Json -Depth 3
     return
   }
 
   $stoppedIds = @(Stop-ProcessTree -RootProcessId $processId)
+  Write-JobStoppedExit -JobDirectory $jobDir
   [pscustomobject]@{
     ok = $true
     action = 'stop-job'
@@ -101,6 +110,7 @@ function Stop-JobProcess {
     pid = $processId
     stopped = $true
     stoppedPids = $stoppedIds
+    exit = 'stopped'
   } | ConvertTo-Json -Depth 3
 }
 
