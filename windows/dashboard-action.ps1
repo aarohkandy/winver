@@ -3,7 +3,7 @@ param(
   [ValidateSet('stop-process', 'stop-job')]
   [string]$Action,
 
-  [int]$Pid = 0,
+  [int]$ProcessId = 0,
   [string]$Target = '',
   [string]$WinverHome = (Join-Path $env:USERPROFILE '.winver')
 )
@@ -89,6 +89,6 @@ function Stop-JobProcess {
 }
 
 switch ($Action) {
-  'stop-process' { Stop-AllowedProcess -ProcessId $Pid }
+  'stop-process' { Stop-AllowedProcess -ProcessId $ProcessId }
   'stop-job' { Stop-JobProcess -JobTarget $Target }
 }
