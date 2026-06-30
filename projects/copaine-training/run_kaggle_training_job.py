@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -36,6 +37,7 @@ DEFAULT_RUNTIME_CONFIG = {
     "logging_steps": 5,
     "force_fp16": False,
     "lora_target_modules": "all-linear",
+    "single_gpu": True,
 }
 
 REQUIRED_PACKAGES = (
@@ -530,7 +532,15 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
     use_fp16 = not use_bf16
     gpu_name = torch.cuda.get_device_name(0)
     total_gb = round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
-    log_stage(output_dir, "cuda_ready", gpu_name=gpu_name, total_gb=total_gb, dtype=str(compute_dtype))
+    log_stage(
+        output_dir,
+        "cuda_ready",
+        gpu_name=gpu_name,
+        total_gb=total_gb,
+        dtype=str(compute_dtype),
+        device_count=torch.cuda.device_count(),
+        cuda_visible_devices=os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+    )
 
     log_stage(output_dir, "tokenizer_load_start", model_id=config["model_id"])
     tokenizer = AutoTokenizer.from_pretrained(config["model_id"], trust_remote_code=False)
@@ -543,7 +553,7 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
         config["model_id"],
         torch_dtype=compute_dtype,
         trust_remote_code=False,
-        device_map="auto",
+        device_map={"": 0} if config.get("single_gpu", True) else "auto",
         quantization_config=BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -655,6 +665,7 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
         "lora_r": config["lora_r"],
         "lora_target_modules": config.get("lora_target_modules", "all-linear"),
         "force_fp16": config.get("force_fp16", False),
+        "single_gpu": config.get("single_gpu", True),
     }
     (output_dir / "run_metadata.json").write_text(json.dumps(run_metadata, indent=2) + "\n", encoding="utf-8")
 
@@ -806,6 +817,8 @@ def run_human_feel_eval(
 
 def main() -> None:
     config = runtime_config()
+    if config.get("single_gpu", True):
+        os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
     output_dir = Path(config["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
     log_stage(output_dir, "main_start", preset=config["preset"], model_id=config["model_id"])
