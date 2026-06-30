@@ -41,6 +41,10 @@ button:hover {
   border-color: #a9b2bd;
 }
 
+button.danger {
+  color: var(--bad);
+}
+
 .shell {
   width: min(1360px, calc(100vw - 32px));
   margin: 0 auto;
@@ -259,6 +263,21 @@ h2 {
   font-size: 13px;
 }
 
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.control-grid button {
+  min-width: 0;
+}
+
+.panel-head p.bad {
+  color: var(--bad);
+  font-weight: 700;
+}
+
 .status {
   border-radius: 999px;
   padding: 4px 8px;
@@ -293,7 +312,7 @@ h2 {
 
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
   align-items: center;
   border-bottom: 1px solid #eef1f4;
@@ -318,6 +337,12 @@ h2 {
   color: var(--text);
   font-weight: 750;
   white-space: nowrap;
+}
+
+.row-action {
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 12px;
 }
 
 .log-panel {

@@ -117,6 +117,13 @@ Describe 'winver Windows scripts' {
     $errors | Should -BeNullOrEmpty
   }
 
+  It 'dashboard-action.ps1 parses without executing' {
+    $tokens = $null
+    $errors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $RepoRoot 'windows\dashboard-action.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
+    $errors | Should -BeNullOrEmpty
+  }
+
   It 'admin scripts parse without executing' {
     foreach ($script in @(
       'windows\admin\policy.ps1',

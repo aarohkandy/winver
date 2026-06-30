@@ -19,6 +19,7 @@ const els = {
   lastUpdated: document.querySelector("#last-updated"),
   taskSummary: document.querySelector("#task-summary"),
   taskList: document.querySelector("#task-list"),
+  controlStatus: document.querySelector("#control-status"),
   services: document.querySelector("#services"),
   thermals: document.querySelector("#thermal-list"),
   processes: document.querySelector("#processes"),
@@ -33,6 +34,9 @@ els.pause.addEventListener("click", () => {
 });
 
 els.refresh.addEventListener("click", () => refresh());
+document.querySelectorAll("[data-control='cooling']").forEach((button) => {
+  button.addEventListener("click", () => applyCooling(button.dataset.profile));
+});
 
 async function refresh() {
   try {
@@ -117,10 +121,13 @@ function renderTasks(jobs) {
       <div class="task-actions">
         <button class="task-open" type="button">Logs</button>
         <button class="task-pull" type="button">Pull</button>
+        ${job.running ? '<button class="task-stop danger" type="button">Stop</button>' : ''}
       </div>
     `;
     item.querySelector(".task-open").addEventListener("click", () => loadLogs(job.id));
     item.querySelector(".task-pull").addEventListener("click", () => pullLogs(job.id));
+    const stopButton = item.querySelector(".task-stop");
+    if (stopButton) stopButton.addEventListener("click", () => stopJob(job.id));
     els.taskList.append(item);
   }
 }
@@ -179,6 +186,42 @@ async function pullLogs(jobId) {
   }
 }
 
+async function applyCooling(profile) {
+  await sendControl({ type: "cooling", profile }, `cooling: ${profile}`);
+}
+
+async function stopJob(jobId) {
+  await sendControl({ type: "stop-job", target: jobId }, `stopped job ${jobId}`);
+  await refresh();
+}
+
+async function stopProcess(pid) {
+  await sendControl({ type: "stop-process", pid }, `stopped process ${pid}`);
+  await refresh();
+}
+
+async function sendControl(body, successText) {
+  els.controlStatus.textContent = "working";
+  els.controlStatus.classList.remove("bad");
+  try {
+    const response = await fetch("/api/control", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Winver-Dashboard": "1"
+      },
+      body: JSON.stringify(body),
+      cache: "no-store"
+    });
+    const payload = await response.json();
+    if (!payload.ok) throw new Error(payload.error || "Control failed");
+    els.controlStatus.textContent = successText;
+  } catch (error) {
+    els.controlStatus.textContent = error.message;
+    els.controlStatus.classList.add("bad");
+  }
+}
+
 function renderServices(services) {
   els.services.innerHTML = "";
   if (!services.length) {
@@ -208,8 +251,19 @@ function renderProcesses(processes) {
     return;
   }
   for (const process of processes) {
-    els.processes.append(row(`${process.name} #${process.id}`, `${process.cpuSeconds}s CPU / ${process.memoryMB} MB`));
+    els.processes.append(processRow(process));
   }
+}
+
+function processRow(process) {
+  const el = row(`${process.name} #${process.id}`, `${process.cpuSeconds}s CPU / ${process.memoryMB} MB`);
+  const stop = document.createElement("button");
+  stop.type = "button";
+  stop.className = "row-action danger";
+  stop.textContent = "Stop";
+  stop.addEventListener("click", () => stopProcess(process.id));
+  el.append(stop);
+  return el;
 }
 
 function row(label, value) {
