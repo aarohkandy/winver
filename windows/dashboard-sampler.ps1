@@ -24,18 +24,32 @@ function New-CpuCounter {
   }
 }
 
-function Get-CpuLoad {
+function Get-CpuSnapshot {
   param($Counter)
-  if ($Counter) {
-    $value = [double]$Counter.NextValue()
-    if (-not [double]::IsNaN($value)) {
-      return [math]::Round([math]::Min([math]::Max($value, 0), 100), 1)
+  $cpuValues = @(Get-CimInstance Win32_Processor |
+    Where-Object { $null -ne $_.LoadPercentage } |
+    ForEach-Object { [double]$_.LoadPercentage })
+  if ($cpuValues.Count -gt 0) {
+    return @{
+      loadPercent = [math]::Round(($cpuValues | Measure-Object -Average).Average, 1)
+      source = 'cim-sampler'
     }
   }
 
-  $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-  if ($cpu -and $null -ne $cpu.LoadPercentage) { return [double]$cpu.LoadPercentage }
-  return $null
+  if ($Counter) {
+    $value = [double]$Counter.NextValue()
+    if (-not [double]::IsNaN($value)) {
+      return @{
+        loadPercent = [math]::Round([math]::Min([math]::Max($value, 0), 100), 1)
+        source = 'performance-counter-fallback'
+      }
+    }
+  }
+
+  return @{
+    loadPercent = $null
+    source = 'unavailable'
+  }
 }
 
 function Get-MemorySnapshot {
@@ -61,13 +75,11 @@ $cpuCounter = New-CpuCounter
 Start-Sleep -Milliseconds ([math]::Max($IntervalMilliseconds, 250))
 
 while ($true) {
+  $cpuSnapshot = Get-CpuSnapshot -Counter $cpuCounter
   $snapshot = [pscustomobject]@{
     collectedAt = (Get-Date).ToString('o')
     pid = $PID
-    cpu = @{
-      loadPercent = Get-CpuLoad -Counter $cpuCounter
-      source = if ($cpuCounter) { 'performance-counter' } else { 'cim-fallback' }
-    }
+    cpu = $cpuSnapshot
     memory = Get-MemorySnapshot
     battery = Get-BatterySnapshot
   }

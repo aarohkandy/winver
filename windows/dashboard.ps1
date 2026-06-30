@@ -13,6 +13,7 @@ $DashboardRoot = Join-Path $WinverHome 'dashboard'
 $SlowCachePath = Join-Path $DashboardRoot 'slow.json'
 $LivePath = Join-Path $DashboardRoot 'live.json'
 $SamplerPidPath = Join-Path $DashboardRoot 'sampler.pid'
+$ExpectedSamplerSource = 'cim-sampler'
 
 function Invoke-Safe {
   param([scriptblock]$Script, $Fallback = $null)
@@ -58,6 +59,14 @@ function Test-SamplerRunning {
   [bool](Get-Process -Id $samplerPid -ErrorAction SilentlyContinue)
 }
 
+function Stop-DashboardSampler {
+  if (-not (Test-Path -LiteralPath $SamplerPidPath)) { return }
+  $samplerPid = Invoke-Safe { [int](Get-Content -LiteralPath $SamplerPidPath -Raw) } 0
+  if ($samplerPid -gt 0) {
+    Invoke-Safe { Stop-Process -Id $samplerPid -Force -ErrorAction SilentlyContinue } | Out-Null
+  }
+}
+
 function Start-DashboardSampler {
   if (Test-SamplerRunning) { return $false }
   New-Item -ItemType Directory -Force -Path $DashboardRoot | Out-Null
@@ -82,11 +91,16 @@ function Start-DashboardSampler {
 
 function Get-LiveSnapshotOrStartSampler {
   $live = Get-LiveSnapshot
+  if ($live -and $live.cpu -and $live.cpu.source -and ([string]$live.cpu.source) -ne $ExpectedSamplerSource) {
+    Stop-DashboardSampler
+    $live = $null
+  }
   if ($live) {
     $live | Add-Member -NotePropertyName samplerStarted -NotePropertyValue $false -Force
     return $live
   }
 
+  if (Test-SamplerRunning) { Stop-DashboardSampler }
   $started = Start-DashboardSampler
   for ($i = 0; $i -lt 8; $i += 1) {
     Start-Sleep -Milliseconds 250
