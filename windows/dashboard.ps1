@@ -24,12 +24,12 @@ function ConvertTo-Megabytes {
   [math]::Round($Bytes / 1MB, 1)
 }
 
-function ConvertTo-ArgumentList {
+function ConvertTo-CommandLine {
   param([string[]]$Values)
-  @($Values | ForEach-Object {
+  (@($Values | ForEach-Object {
     $text = [string]$_
     if ($text -match '[\s"]') { '"' + ($text -replace '"', '\"') + '"' } else { $text }
-  })
+  })) -join ' '
 }
 
 function Get-AgeMilliseconds {
@@ -63,7 +63,8 @@ function Start-DashboardSampler {
   New-Item -ItemType Directory -Force -Path $DashboardRoot | Out-Null
   $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
   $script = Join-Path $PSScriptRoot 'dashboard-sampler.ps1'
-  $args = ConvertTo-ArgumentList @(
+  $commandLine = ConvertTo-CommandLine @(
+    $powershell,
     '-NoLogo',
     '-NoProfile',
     '-ExecutionPolicy',
@@ -73,7 +74,9 @@ function Start-DashboardSampler {
     '-WinverHome',
     $WinverHome
   )
-  Invoke-Safe { Start-Process -FilePath $powershell -ArgumentList $args -WindowStyle Hidden | Out-Null } | Out-Null
+  Invoke-Safe {
+    Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $commandLine } | Out-Null
+  } | Out-Null
   $true
 }
 
