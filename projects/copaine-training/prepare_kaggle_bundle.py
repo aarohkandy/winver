@@ -22,6 +22,8 @@ DATASET_FILES = (
     "overfit_smoke.jsonl",
     "style_selected.jsonl",
     "behavior_examples.jsonl",
+    "human_style_examples.jsonl",
+    "human_feel_eval_prompts.jsonl",
     "style_reference.txt",
     "summary.json",
 )
@@ -38,6 +40,7 @@ KERNEL_ASSET_FILES = (
     "train_mixed.jsonl",
     "val_mixed.jsonl",
     "manual_eval_prompts.jsonl",
+    "human_feel_eval_prompts.jsonl",
 )
 
 

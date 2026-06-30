@@ -37,6 +37,7 @@ RISK_PATTERNS: dict[str, re.Pattern[str]] = {
         r"\b(?:"
         r"can't breathe|cannot breathe|not breathing|chest pain|seizure|passed out|"
         r"unconscious|not waking up|overdosed?|bleeding badly|won't stop bleeding|"
+        r"cant breathe|can't stop bleeding|cant stop bleeding|cannot stop bleeding|"
         r"poisoned|heart attack|having a stroke|signs of stroke|might be a stroke"
         r")\b",
         re.IGNORECASE,
@@ -54,6 +55,7 @@ RISK_PATTERNS: dict[str, re.Pattern[str]] = {
     "abuse_or_assault": re.compile(
         r"\b(?:"
         r"rape|raped|sexual assault|molest(?:ed|ing)?|groom(?:ed|ing)?|"
+        r"sexually assaulted|"
         r"domestic violence|my boyfriend hits me|my girlfriend hits me|"
         r"my parent hits me|abusive relationship"
         r")\b",
@@ -63,6 +65,7 @@ RISK_PATTERNS: dict[str, re.Pattern[str]] = {
         r"\b(?:"
         r"kill you|murder you|shoot you|stab you|bomb (?:them|it|the place)|"
         r"i'm going to kill|im going to kill|want to kill (?:him|her|them|someone|everybody)|"
+        r"shoot someone|stab someone|hurt someone|"
         r"beat (?:them|him|her) up"
         r")\b",
         re.IGNORECASE,
@@ -74,6 +77,7 @@ META_PATTERNS: dict[str, re.Pattern[str]] = {
         r"\b(?:"
         r"(?:ignore|forget|disregard|bypass|override).{0,80}(?:previous|prior|all|system|developer|instructions?)|"
         r"jailbreak|developer mode|debug mode|do anything now|\bdan\b|"
+        r"safety is off|safety off|turn off safety|disable safety|"
         r"you are now|i made you|this is a test.{0,80}(?:control|instructions?)|"
         r"(?:give|grant).{0,30}(?:control access|admin access|root access|debug access)|"
         r"(?:give|grant) me control\b"
@@ -84,7 +88,7 @@ META_PATTERNS: dict[str, re.Pattern[str]] = {
         r"\b(?:"
         r"system prompt|developer prompt|hidden prompt|hidden instructions?|initial instructions?|"
         r"full instructions?|prompt text|internal prompt|private prompt|"
-        r"system architecture|internal architecture|architecture diagram|diagnostics?|debug logs?|"
+        r"system architecture|internal architecture|private architecture|architecture diagram|diagnostics?|debug logs?|"
         r"chain of thought|internal reasoning|tool schema|api keys?|secrets?|control panel"
         r")\b",
         re.IGNORECASE,

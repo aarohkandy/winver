@@ -5,7 +5,7 @@ param(
   [string]$Branch = 'main',
 
   [Parameter(Position = 1)]
-  [ValidateSet('light', 'medium', 'heavy')]
+  [ValidateSet('light', 'medium', 'heavy', 'empathy')]
   [string]$Preset = 'medium',
 
   [Parameter(Position = 2)]

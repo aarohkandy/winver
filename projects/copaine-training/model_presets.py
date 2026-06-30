@@ -120,9 +120,36 @@ PRESETS: dict[str, ModelPreset] = {
         hosting_note="Free external hosting is mostly demo-grade. If you want dependable private use, run it on your own box.",
         summary="Largest model in the ladder that still has a real chance of fitting the free budget and your local speed goal.",
     ),
+    "empathy": ModelPreset(
+        key="empathy",
+        label="Empathy",
+        family="qwen3",
+        model_id="Someet24/empathetic-qwen3-8b-Jan",
+        output_dir=Path("outputs/qwen3-8b-empathy-copaine-lora"),
+        kernel_slug="qwen-3-8b-empathy-copaine-style-train",
+        kernel_title="Qwen 3 8B Empathy Copaine Style Train",
+        max_length=768,
+        per_device_train_batch_size=2,
+        per_device_eval_batch_size=1,
+        gradient_accumulation_steps=16,
+        learning_rate=1.25e-4,
+        warmup_ratio=0.03,
+        num_train_epochs=1.0,
+        lora_r=16,
+        lora_alpha=32,
+        lora_dropout=0.05,
+        save_steps=25,
+        eval_steps=50,
+        disable_thinking=True,
+        expected_local_latency="Expect heavy-model latency locally; this is a quality candidate, not the fastest path.",
+        expected_kaggle_train_time="Roughly 8 to 14 hours for the current pack, depending on GPU availability and eval cost.",
+        access_note="Public Apache-2.0 model, but keep Copaine guardrails in front because the model card does not claim crisis safety.",
+        hosting_note="Serve only behind the Copaine gateway. Do not expose this candidate directly as a therapy endpoint.",
+        summary="Best candidate for the Poke-like emotional texting lane: Qwen3-8B with an empathy prior, then Copaine style tuning.",
+    ),
 }
 
-MODEL_LADDER = ("light", "medium", "heavy")
+MODEL_LADDER = ("light", "medium", "heavy", "empathy")
 DEFAULT_DATASET_SLUG = "support-bot-style-pack"
 
 

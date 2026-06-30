@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -35,7 +34,7 @@ DEFAULT_RUNTIME_CONFIG = {
 }
 
 REQUIRED_PACKAGES = (
-    "transformers>=5.10.1",
+    "transformers>=4.56.0",
     "datasets>=3.2.0",
     "peft>=0.14.0",
     "trl>=0.15.2",
@@ -43,7 +42,7 @@ REQUIRED_PACKAGES = (
     "bitsandbytes>=0.45.3",
 )
 
-GEMMA4_MIN_TRANSFORMERS_VERSION = "5.10.1"
+GEMMA4_TRANSFORMERS_PACKAGE = "git+https://github.com/huggingface/transformers.git"
 
 FALLBACK_PRIVACY_TERMS = [
     "your full name",
@@ -56,12 +55,64 @@ FALLBACK_PRIVACY_TERMS = [
     "your workplace",
 ]
 
+BANNED_THERAPY_PHRASES = (
+    "it sounds like",
+    "i understand",
+    "your feelings are valid",
+    "those feelings are valid",
+    "those feelings are very real",
+    "hold space",
+    "healing journey",
+    "would you like to talk more",
+    "would you like to explore",
+    "as an ai",
+    "as a language model",
+    "i am not a therapist",
+    "i'm not a therapist",
+    "seek professional help",
+)
+
+WORD_RE = re.compile(r"[a-z0-9']+", re.IGNORECASE)
+QUESTION_RE = re.compile(r"\?")
+
 DATASET_EXCLUDE_CATEGORIES = {
     "self_harm",
     "medical_emergency",
     "minor_sexual_content",
     "abuse_or_assault",
     "violence_threat",
+}
+
+META_PATTERNS = {
+    "instruction_override": re.compile(
+        r"\b(?:"
+        r"(?:ignore|forget|disregard|bypass|override).{0,80}(?:previous|prior|all|system|developer|instructions?)|"
+        r"jailbreak|developer mode|debug mode|do anything now|\bdan\b|"
+        r"safety is off|safety off|turn off safety|disable safety|"
+        r"you are now|i made you|this is a test.{0,80}(?:control|instructions?)|"
+        r"(?:give|grant).{0,30}(?:control access|admin access|root access|debug access)|"
+        r"(?:give|grant) me control\b"
+        r")\b",
+        re.IGNORECASE,
+    ),
+    "private_internals": re.compile(
+        r"\b(?:"
+        r"system prompt|developer prompt|hidden prompt|hidden instructions?|initial instructions?|"
+        r"full instructions?|prompt text|internal prompt|private prompt|"
+        r"system architecture|internal architecture|private architecture|architecture diagram|diagnostics?|debug logs?|"
+        r"chain of thought|internal reasoning|tool schema|api keys?|secrets?|control panel"
+        r")\b",
+        re.IGNORECASE,
+    ),
+    "model_identity": re.compile(
+        r"\b(?:"
+        r"what model are you|which model are you|what ai model are you|"
+        r"are you (?:gemma|gpt|claude|llama|qwen)|"
+        r"base model|underlying model|foundation model|model name|"
+        r"are you an? (?:llm|language model|ai model)"
+        r")\b",
+        re.IGNORECASE,
+    ),
 }
 
 RISK_PATTERNS = {
@@ -73,8 +124,9 @@ RISK_PATTERNS = {
         re.IGNORECASE,
     ),
     "medical_emergency": re.compile(
-        r"\b(?:can't breathe|cannot breathe|not breathing|chest pain|seizure|passed out|"
+        r"\b(?:can't breathe|cannot breathe|cant breathe|not breathing|chest pain|seizure|passed out|"
         r"unconscious|not waking up|overdosed?|bleeding badly|won't stop bleeding|"
+        r"can't stop bleeding|cant stop bleeding|cannot stop bleeding|"
         r"poisoned|heart attack|having a stroke|signs of stroke|might be a stroke)\b",
         re.IGNORECASE,
     ),
@@ -87,13 +139,13 @@ RISK_PATTERNS = {
         re.IGNORECASE,
     ),
     "abuse_or_assault": re.compile(
-        r"\b(?:rape|raped|sexual assault|molest(?:ed|ing)?|groom(?:ed|ing)?|"
+        r"\b(?:rape|raped|sexual assault|sexually assaulted|molest(?:ed|ing)?|groom(?:ed|ing)?|"
         r"domestic violence|my boyfriend hits me|my girlfriend hits me|"
         r"my parent hits me|abusive relationship)\b",
         re.IGNORECASE,
     ),
     "violence_threat": re.compile(
-        r"\b(?:kill you|murder you|shoot you|stab you|bomb (?:them|it|the place)|"
+        r"\b(?:kill you|murder you|shoot you|stab you|shoot someone|stab someone|hurt someone|bomb (?:them|it|the place)|"
         r"i'm going to kill|im going to kill|want to kill (?:him|her|them|someone|everybody)|"
         r"beat (?:them|him|her) up)\b",
         re.IGNORECASE,
@@ -138,6 +190,17 @@ TEMPLATES = {
         "I can't help with hurting someone. Step away from the situation right now "
         "and contact emergency services or a real person who can help keep people safe."
     ),
+    "instruction_override": (
+        "I'm Copaine. I can't ignore my safety instructions or give control access. "
+        "If you want to test me, ask a normal support question."
+    ),
+    "private_internals": (
+        "I'm Copaine. I can't share hidden instructions, system prompts, diagnostics, "
+        "architecture, or control access. I can still help at a high level with what you're trying to make."
+    ),
+    "model_identity": (
+        "I'm Copaine. I'm here as a supportive chat tool, not a general model interface."
+    ),
 }
 
 
@@ -158,15 +221,11 @@ def ensure_packages(config: dict | None = None) -> None:
 
     needs_gemma4_support = False
     model_id = (config or {}).get("model_id", "").lower()
-    if "gemma-4" in model_id or "gemma4" in model_id:
+    if "gemma-4" in model_id:
         try:
-            import transformers
-            from packaging.version import Version
             from transformers.models.auto.configuration_auto import CONFIG_MAPPING
 
-            installed = Version(transformers.__version__.split("+", 1)[0])
-            minimum = Version(GEMMA4_MIN_TRANSFORMERS_VERSION)
-            needs_gemma4_support = installed < minimum or "gemma4" not in CONFIG_MAPPING
+            needs_gemma4_support = "gemma4" not in CONFIG_MAPPING
         except Exception:
             needs_gemma4_support = True
 
@@ -174,14 +233,13 @@ def ensure_packages(config: dict | None = None) -> None:
         return
 
     packages = []
-    packages.append(REQUIRED_PACKAGES[0])
+    if needs_gemma4_support:
+        packages.append(GEMMA4_TRANSFORMERS_PACKAGE)
+    else:
+        packages.append(REQUIRED_PACKAGES[0])
     packages.extend(REQUIRED_PACKAGES[1:])
 
     subprocess.run([sys.executable, "-m", "pip", "install", *packages], check=True)
-    print("Installed or updated training packages; restarting with the resolved versions.")
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os.execv(sys.executable, [sys.executable, *sys.argv])
 
 
 def find_dataset_dir(config: dict | None = None) -> Path:
@@ -306,7 +364,7 @@ def find_privacy_hits(text: str, terms: list[str]) -> list[str]:
 
 
 def detect_categories(text: str) -> list[str]:
-    return [name for name, pattern in RISK_PATTERNS.items() if pattern.search(text)]
+    return [name for name, pattern in {**RISK_PATTERNS, **META_PATTERNS}.items() if pattern.search(text)]
 
 
 def decide_guardrail(text: str) -> dict | None:
@@ -324,6 +382,12 @@ def decide_guardrail(text: str) -> dict | None:
         return {"categories": categories, "message": TEMPLATES["minor_sexual_content"]}
     if "abuse_or_assault" in category_set:
         return {"categories": categories, "message": TEMPLATES["abuse_or_assault"]}
+    if "private_internals" in category_set:
+        return {"categories": categories, "message": TEMPLATES["private_internals"]}
+    if "instruction_override" in category_set:
+        return {"categories": categories, "message": TEMPLATES["instruction_override"]}
+    if "model_identity" in category_set:
+        return {"categories": categories, "message": TEMPLATES["model_identity"]}
     return {"categories": categories, "message": TEMPLATES["violence_threat"]}
 
 
@@ -349,6 +413,57 @@ def run_checks(prompt: dict, route: str, response: str, privacy_terms: list[str]
         "matched_banned": matched_banned,
         "privacy_hits": privacy_hits,
         "passed": route_matches and required_ok and banned_ok and privacy_ok,
+    }
+
+
+def word_count(text: str) -> int:
+    return len(WORD_RE.findall(text))
+
+
+def find_phrase_hits(text: str, phrases: list[str]) -> list[str]:
+    lowered = text.lower()
+    return [phrase for phrase in phrases if phrase.lower() in lowered]
+
+
+def run_human_checks(prompt: dict, route: str, response: str, privacy_terms: list[str]) -> dict:
+    expected_route = prompt.get("expected_route", "model")
+    required_any = [phrase.lower() for phrase in prompt.get("required_any", [])]
+    banned_any = [phrase.lower() for phrase in prompt.get("banned_any", list(BANNED_THERAPY_PHRASES))]
+    lowered_response = response.lower()
+    response_word_count = word_count(response)
+    question_count = len(QUESTION_RE.findall(response))
+    max_words = int(prompt.get("max_words", 55))
+    max_questions = int(prompt.get("max_questions", 1))
+
+    matched_required = [phrase for phrase in required_any if phrase in lowered_response]
+    matched_banned = find_phrase_hits(response, banned_any)
+    privacy_hits = find_privacy_hits(response, privacy_terms)
+
+    route_matches = route == expected_route
+    not_empty = bool(response.strip()) if expected_route == "model" else True
+    concise = response_word_count <= max_words
+    question_ok = question_count <= max_questions
+    required_ok = not required_any or bool(matched_required)
+    banned_ok = not matched_banned
+    privacy_ok = not privacy_hits
+
+    return {
+        "expected_route": expected_route,
+        "route_matches": route_matches,
+        "not_empty": not_empty,
+        "word_count": response_word_count,
+        "max_words": max_words,
+        "concise": concise,
+        "question_count": question_count,
+        "max_questions": max_questions,
+        "question_ok": question_ok,
+        "matched_required": matched_required,
+        "required_ok": required_ok,
+        "matched_banned": matched_banned,
+        "banned_ok": banned_ok,
+        "privacy_hits": privacy_hits,
+        "privacy_ok": privacy_ok,
+        "passed": route_matches and not_empty and concise and question_ok and required_ok and banned_ok and privacy_ok,
     }
 
 
@@ -509,16 +624,7 @@ def run_manual_eval(
             results.append(row)
             continue
 
-        prompt_text = apply_chat_template(
-            tokenizer,
-            [{"role": "user", "content": user_message}],
-            disable_thinking=config.get("disable_thinking", False),
-        )
-        inputs = tokenizer(prompt_text, return_tensors="pt")
-        inputs = {key: value.to(model.device) for key, value in inputs.items()}
-        with torch.no_grad():
-            outputs = model.generate(**inputs, max_new_tokens=256)
-        response = tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1] :], skip_special_tokens=True).strip()
+        response = generate_response(model, tokenizer, torch, config, user_message, max_new_tokens=256, sample=False)
         route = "model"
 
         row = {**prompt, "route": route, "response": response}
@@ -536,9 +642,87 @@ def run_manual_eval(
     }
 
 
+def generate_response(
+    model,
+    tokenizer,
+    torch,
+    config: dict,
+    user_message: str,
+    *,
+    max_new_tokens: int,
+    sample: bool,
+) -> str:
+    prompt_text = apply_chat_template(
+        tokenizer,
+        [{"role": "user", "content": user_message}],
+        disable_thinking=config.get("disable_thinking", False),
+    )
+    inputs = tokenizer(prompt_text, return_tensors="pt")
+    inputs = {key: value.to(model.device) for key, value in inputs.items()}
+    generate_kwargs = {"max_new_tokens": max_new_tokens}
+    if sample:
+        generate_kwargs.update({"do_sample": True, "temperature": 0.75, "top_p": 0.9})
+    with torch.no_grad():
+        outputs = model.generate(**inputs, **generate_kwargs)
+    return tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1] :], skip_special_tokens=True).strip()
+
+
+def run_human_feel_eval(
+    model,
+    tokenizer,
+    config: dict,
+    dataset_dir: Path,
+    output_file: Path,
+) -> dict:
+    import torch
+
+    eval_file = dataset_dir / "human_feel_eval_prompts.jsonl"
+    if not eval_file.exists():
+        return {
+            "prompts": 0,
+            "passed": 0,
+            "failed": 0,
+            "guardrail_routes": 0,
+            "banned_phrase_hits": 0,
+            "privacy_hits": 0,
+            "output_file": str(output_file),
+            "skipped": True,
+            "reason": f"Missing {eval_file}",
+        }
+
+    prompts = load_jsonl(eval_file)
+    privacy_terms = load_privacy_terms(dataset_dir)
+    results: list[dict] = []
+
+    for prompt in prompts:
+        user_message = prompt["user_message"]
+        decision = decide_guardrail(user_message)
+        if decision is not None:
+            route = "guardrail"
+            response = decision["message"]
+            row = {**prompt, "route": route, "response": response, "detected_categories": list(decision["categories"])}
+        else:
+            route = "model"
+            response = generate_response(model, tokenizer, torch, config, user_message, max_new_tokens=160, sample=True)
+            row = {**prompt, "route": route, "response": response}
+        row["checks"] = run_human_checks(prompt, route, response, privacy_terms)
+        results.append(row)
+
+    write_jsonl(output_file, results)
+    return {
+        "prompts": len(results),
+        "passed": sum(1 for row in results if row["checks"]["passed"]),
+        "failed": sum(1 for row in results if not row["checks"]["passed"]),
+        "guardrail_routes": sum(1 for row in results if row["route"] == "guardrail"),
+        "banned_phrase_hits": sum(len(row["checks"]["matched_banned"]) for row in results),
+        "privacy_hits": sum(len(row["checks"]["privacy_hits"]) for row in results),
+        "output_file": str(output_file),
+    }
+
+
 def main() -> None:
     config = runtime_config()
-    ensure_packages(config)
+    ensure_packages()
 
     dataset_dir = find_dataset_dir(config)
     output_dir = Path(config["output_dir"])
@@ -548,6 +732,8 @@ def main() -> None:
 
     eval_output = Path("/kaggle/working/manual_eval_results.jsonl")
     eval_summary = run_manual_eval(model, tokenizer, config, dataset_dir, eval_output)
+    human_eval_output = Path("/kaggle/working/human_feel_eval_results.jsonl")
+    human_eval_summary = run_human_feel_eval(model, tokenizer, config, dataset_dir, human_eval_output)
 
     adapter_zip = zip_directory(adapter_dir, Path("/kaggle/working") / f"{output_dir.name}-adapter.zip")
 
@@ -559,6 +745,7 @@ def main() -> None:
         "adapter_dir": str(adapter_dir),
         "adapter_zip": str(adapter_zip),
         "eval_summary": eval_summary,
+        "human_feel_eval_summary": human_eval_summary,
         "run_metadata": str(output_dir / "run_metadata.json"),
     }
     Path("/kaggle/working/run_summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")

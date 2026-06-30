@@ -40,7 +40,7 @@ Open the live dashboard when you want the Surface to feel like a little server c
 ./bin/winver dashboard --open
 ```
 
-The page ticks about once a second and shows CPU, memory, thermal readings, services, worker processes, and recent jobs. To keep the Surface calmer, the Mac serves most browser ticks from a short-lived cache and only refreshes the heavier Surface scan periodically. The task list can open job logs inline and pull a zipped log bundle into `./winver-pulls`.
+The page ticks about once a second and shows CPU, memory, thermal readings, services, worker processes, and recent jobs. To keep the Surface calmer, the Mac serves most browser ticks from a short-lived cache and only refreshes the heavier Surface scan periodically. The task list can open job logs inline and pull a zipped log bundle into `~/winver-pulls`.
 
 You can also run one-off commands directly:
 
