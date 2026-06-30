@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 
 
@@ -32,6 +33,9 @@ DEFAULT_RUNTIME_CONFIG = {
     "eval_steps": 50,
     "disable_thinking": True,
     "optim": "paged_adamw_8bit",
+    "logging_steps": 5,
+    "force_fp16": False,
+    "lora_target_modules": "all-linear",
 }
 
 REQUIRED_PACKAGES = (
@@ -519,7 +523,9 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
         log_stage(output_dir, "cuda_missing")
         raise SystemExit("Kaggle runner expected a GPU, but CUDA is not available.")
 
-    compute_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    compute_dtype = torch.float16 if config.get("force_fp16") else (
+        torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+    )
     use_bf16 = compute_dtype == torch.bfloat16
     use_fp16 = not use_bf16
     gpu_name = torch.cuda.get_device_name(0)
@@ -576,7 +582,7 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
         lora_alpha=config["lora_alpha"],
         lora_dropout=config["lora_dropout"],
         bias="none",
-        target_modules="all-linear",
+        target_modules=config.get("lora_target_modules", "all-linear"),
         task_type="CAUSAL_LM",
     )
 
@@ -589,7 +595,7 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
         gradient_accumulation_steps=config["gradient_accumulation_steps"],
         learning_rate=config["learning_rate"],
         warmup_ratio=config["warmup_ratio"],
-        logging_steps=5,
+        logging_steps=config.get("logging_steps", 5),
         save_strategy="steps",
         save_steps=config["save_steps"],
         eval_strategy="steps" if config["eval_steps"] > 0 else "no",
@@ -644,11 +650,27 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
         "save_steps": config["save_steps"],
         "eval_steps": config["eval_steps"],
         "disable_thinking": config.get("disable_thinking", False),
+        "max_length": config["max_length"],
+        "gradient_accumulation_steps": config["gradient_accumulation_steps"],
+        "lora_r": config["lora_r"],
+        "lora_target_modules": config.get("lora_target_modules", "all-linear"),
+        "force_fp16": config.get("force_fp16", False),
     }
     (output_dir / "run_metadata.json").write_text(json.dumps(run_metadata, indent=2) + "\n", encoding="utf-8")
 
     log_stage(output_dir, "trainer_train_call")
-    trainer.train()
+    try:
+        trainer.train()
+    except BaseException as exc:
+        failure = {
+            "stage": "trainer_train_exception",
+            "exception_type": type(exc).__name__,
+            "message": str(exc),
+            "traceback": traceback.format_exc(),
+        }
+        (output_dir / "failure.json").write_text(json.dumps(failure, indent=2) + "\n", encoding="utf-8")
+        log_stage(output_dir, "trainer_train_exception", exception_type=type(exc).__name__, message=str(exc))
+        raise
     adapter_dir = output_dir / "adapter"
     log_stage(output_dir, "adapter_save_start", adapter_dir=str(adapter_dir))
     trainer.save_model(str(adapter_dir))

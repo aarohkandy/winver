@@ -155,6 +155,9 @@ def main() -> None:
         "save_steps": preset.save_steps,
         "eval_steps": preset.eval_steps,
         "disable_thinking": preset.disable_thinking,
+        "logging_steps": 1 if preset.key == "empathy" else 5,
+        "force_fp16": preset.key == "empathy",
+        "lora_target_modules": ["q_proj", "v_proj"] if preset.key == "empathy" else "all-linear",
     }
     runtime_script = kernel_dir / "run_kaggle_training_job.py"
     runtime_source = runtime_script.read_text(encoding="utf-8")
