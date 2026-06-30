@@ -49,7 +49,7 @@ function Get-WinverProcesses {
   @(Get-Process -ErrorAction SilentlyContinue |
     Where-Object { $names -contains $_.ProcessName.ToLowerInvariant() } |
     Sort-Object CPU -Descending |
-    Select-Object -First 12 |
+    Select-Object -First 24 |
     ForEach-Object {
       [pscustomobject]@{
         name = $_.ProcessName
