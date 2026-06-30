@@ -11,6 +11,8 @@ $ErrorActionPreference = 'Stop'
 $LogRoot = Join-Path $WinverHome 'logs'
 $DashboardRoot = Join-Path $WinverHome 'dashboard'
 $SlowCachePath = Join-Path $DashboardRoot 'slow.json'
+$LivePath = Join-Path $DashboardRoot 'live.json'
+$SamplerPidPath = Join-Path $DashboardRoot 'sampler.pid'
 
 function Invoke-Safe {
   param([scriptblock]$Script, $Fallback = $null)
@@ -20,6 +22,78 @@ function Invoke-Safe {
 function ConvertTo-Megabytes {
   param([double]$Bytes)
   [math]::Round($Bytes / 1MB, 1)
+}
+
+function ConvertTo-ArgumentList {
+  param([string[]]$Values)
+  @($Values | ForEach-Object {
+    $text = [string]$_
+    if ($text -match '[\s"]') { '"' + ($text -replace '"', '\"') + '"' } else { $text }
+  })
+}
+
+function Get-AgeMilliseconds {
+  param([string]$IsoDate)
+  try {
+    return [int](([DateTimeOffset]::Now - [DateTimeOffset]::Parse($IsoDate)).TotalMilliseconds)
+  } catch {
+    return $null
+  }
+}
+
+function Get-LiveSnapshot {
+  if (-not (Test-Path -LiteralPath $LivePath)) { return $null }
+  $snapshot = Invoke-Safe { Get-Content -LiteralPath $LivePath -Raw | ConvertFrom-Json } $null
+  if (-not $snapshot -or -not $snapshot.collectedAt) { return $null }
+  $ageMs = Get-AgeMilliseconds -IsoDate ([string]$snapshot.collectedAt)
+  if ($null -eq $ageMs -or $ageMs -gt 6000) { return $null }
+  $snapshot | Add-Member -NotePropertyName ageMs -NotePropertyValue $ageMs -Force
+  $snapshot
+}
+
+function Test-SamplerRunning {
+  if (-not (Test-Path -LiteralPath $SamplerPidPath)) { return $false }
+  $samplerPid = Invoke-Safe { [int](Get-Content -LiteralPath $SamplerPidPath -Raw) } 0
+  if ($samplerPid -le 0) { return $false }
+  [bool](Get-Process -Id $samplerPid -ErrorAction SilentlyContinue)
+}
+
+function Start-DashboardSampler {
+  if (Test-SamplerRunning) { return $false }
+  New-Item -ItemType Directory -Force -Path $DashboardRoot | Out-Null
+  $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+  $script = Join-Path $PSScriptRoot 'dashboard-sampler.ps1'
+  $args = ConvertTo-ArgumentList @(
+    '-NoLogo',
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    $script,
+    '-WinverHome',
+    $WinverHome
+  )
+  Invoke-Safe { Start-Process -FilePath $powershell -ArgumentList $args -WindowStyle Hidden | Out-Null } | Out-Null
+  $true
+}
+
+function Get-LiveSnapshotOrStartSampler {
+  $live = Get-LiveSnapshot
+  if ($live) {
+    $live | Add-Member -NotePropertyName samplerStarted -NotePropertyValue $false -Force
+    return $live
+  }
+
+  $started = Start-DashboardSampler
+  for ($i = 0; $i -lt 8; $i += 1) {
+    Start-Sleep -Milliseconds 250
+    $live = Get-LiveSnapshot
+    if ($live) {
+      $live | Add-Member -NotePropertyName samplerStarted -NotePropertyValue $started -Force
+      return $live
+    }
+  }
+  $null
 }
 
 function Get-ValidTemperature {
@@ -144,10 +218,29 @@ function Get-SlowSnapshot {
   $snapshot
 }
 
-$os = Get-CimInstance Win32_OperatingSystem
 $cpu = @(Get-CimInstance Win32_Processor | Select-Object -First 1)[0]
-$battery = Invoke-Safe { Get-CimInstance Win32_Battery | Select-Object -First 1 } $null
+$os = Get-CimInstance Win32_OperatingSystem
+$fallbackBattery = Invoke-Safe { Get-CimInstance Win32_Battery | Select-Object -First 1 } $null
+$live = Get-LiveSnapshotOrStartSampler
 $slow = Get-SlowSnapshot
+$cpuLoadPercent = if ($live -and $live.cpu -and $null -ne $live.cpu.loadPercent) { [double]$live.cpu.loadPercent } else { [double]$cpu.LoadPercentage }
+$memorySnapshot = if ($live -and $live.memory) {
+  $live.memory
+} else {
+  @{
+    totalMB = [math]::Round($os.TotalVisibleMemorySize / 1024, 0)
+    freeMB = [math]::Round($os.FreePhysicalMemory / 1024, 0)
+    usedPercent = [math]::Round((1 - ($os.FreePhysicalMemory / $os.TotalVisibleMemorySize)) * 100, 1)
+  }
+}
+$batterySnapshot = if ($live -and $live.battery) {
+  $live.battery
+} elseif ($fallbackBattery) {
+  @{
+    percent = [int]$fallbackBattery.EstimatedChargeRemaining
+    status = [string]$fallbackBattery.BatteryStatus
+  }
+} else { $null }
 
 [pscustomobject]@{
   collectedAt = (Get-Date).ToString('o')
@@ -160,19 +253,12 @@ $slow = Get-SlowSnapshot
   }
   cpu = @{
     name = $cpu.Name
-    loadPercent = [int]($cpu.LoadPercentage)
+    loadPercent = [math]::Round($cpuLoadPercent, 1)
+    source = if ($live -and $live.cpu -and $live.cpu.source) { [string]$live.cpu.source } else { 'cim-fallback' }
+    sampleAgeMs = if ($live) { $live.ageMs } else { $null }
   }
-  memory = @{
-    totalMB = [math]::Round($os.TotalVisibleMemorySize / 1024, 0)
-    freeMB = [math]::Round($os.FreePhysicalMemory / 1024, 0)
-    usedPercent = [math]::Round((1 - ($os.FreePhysicalMemory / $os.TotalVisibleMemorySize)) * 100, 1)
-  }
-  battery = if ($battery) {
-    @{
-      percent = [int]$battery.EstimatedChargeRemaining
-      status = [string]$battery.BatteryStatus
-    }
-  } else { $null }
+  memory = $memorySnapshot
+  battery = $batterySnapshot
   power = $slow.power
   thermal = $slow.thermal
   services = $slow.services
@@ -182,5 +268,11 @@ $slow = Get-SlowSnapshot
     slowCollectedAt = $slow.slowCollectedAt
     slowTtlSeconds = $SlowTtlSeconds
     forceRefresh = [bool]$ForceRefresh
+    sampler = @{
+      running = Test-SamplerRunning
+      started = if ($live) { [bool]$live.samplerStarted } else { $false }
+      liveCollectedAt = if ($live) { [string]$live.collectedAt } else { '' }
+      liveAgeMs = if ($live) { $live.ageMs } else { $null }
+    }
   }
 } | ConvertTo-Json -Depth 8
