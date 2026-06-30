@@ -1,10 +1,13 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('status', 'power', 'services', 'updates', 'defender', 'firewall', 'bitlocker', 'tpm', 'battery', 'thermal', 'server-profile', 'lockdown', 'unlock', 'rollback', 'export-recovery', 'break-glass', 'reboot', 'shutdown', 'admin-shell')]
+  [ValidateSet('status', 'power', 'services', 'updates', 'defender', 'firewall', 'bitlocker', 'tpm', 'battery', 'thermal', 'server-profile', 'lockdown', 'cooling', 'unlock', 'rollback', 'export-recovery', 'break-glass', 'reboot', 'shutdown', 'admin-shell')]
   [string]$Action = 'status',
 
   [ValidateSet('DryRun', 'Apply')]
   [string]$Mode = 'DryRun',
+
+  [ValidateSet('status', 'max', 'cool', 'balanced', 'quiet')]
+  [string]$CoolingProfile = 'status',
 
   [string]$RequestId = ([guid]::NewGuid().ToString()),
   [string]$Signature = '',
@@ -49,7 +52,7 @@ function Assert-SignedApply {
     throw "Missing admin request signature. Run ./mac/setup-admin-key.sh on the Mac and retry."
   }
 
-  $payload = ConvertTo-WinverSignaturePayload -Action $Action -Mode $Mode -RequestId $RequestId -Command $AdminShellCommand
+  $payload = ConvertTo-WinverSignaturePayload -Action $Action -Mode $Mode -RequestId $RequestId -Command $AdminShellCommand -Profile $CoolingProfile
   if (-not (Test-WinverHmacSignature -Key $key -Payload $payload -Signature $Signature)) {
     throw "Admin request signature did not verify."
   }
@@ -217,6 +220,193 @@ function Show-UnlockPlan {
   } | Format-List
 }
 
+function Invoke-WinverPowercfg {
+  param(
+    [Parameter(Mandatory = $true)][string]$Name,
+    [Parameter(Mandatory = $true)][string[]]$Arguments,
+    [switch]$AllowFailure
+  )
+
+  $output = & powercfg @Arguments 2>&1
+  $code = $LASTEXITCODE
+  $result = [pscustomobject]@{
+    name = $Name
+    ok = ($code -eq 0)
+    code = $code
+    command = "powercfg $($Arguments -join ' ')"
+    output = (($output | ForEach-Object { [string]$_ }) -join "`n").Trim()
+  }
+  if ($code -ne 0 -and -not $AllowFailure) {
+    throw "$($result.command) failed with code $code. $($result.output)"
+  }
+  $result
+}
+
+function Get-CoolingSettingIds {
+  @{
+    processor = '54533251-82be-4824-96c1-47b60b740d00'
+    min = '893dee8e-2bef-41e0-89c6-b55d0929964c'
+    max = 'bc5038f7-23e0-4960-96da-33abaf5935ec'
+    cooling = '94d3a615-a899-4ac5-ae2b-e4d8f634367f'
+    boost = 'be337238-0d82-4146-a960-4f3749d470c7'
+    epp = '36687f9e-e3a5-4dbf-b1dc-15eb381c6863'
+  }
+}
+
+function Set-CoolingValue {
+  param(
+    [Parameter(Mandatory = $true)][string]$Name,
+    [Parameter(Mandatory = $true)][string]$Setting,
+    [Parameter(Mandatory = $true)][int]$Value
+  )
+
+  $ids = Get-CoolingSettingIds
+  Invoke-WinverPowercfg -Name $Name -Arguments @('/setacvalueindex', 'SCHEME_CURRENT', $ids.processor, $Setting, [string]$Value) -AllowFailure
+}
+
+function Get-WinverThermalRows {
+  $zones = Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction SilentlyContinue
+  @($zones | ForEach-Object {
+    $celsius = [math]::Round(($_.CurrentTemperature / 10) - 273.15, 1)
+    [pscustomobject]@{
+      zone = $_.InstanceName
+      celsius = $celsius
+      valid = ($celsius -gt -50 -and $celsius -lt 130)
+    }
+  })
+}
+
+function Show-CoolingStatus {
+  $ids = Get-CoolingSettingIds
+  $temps = Get-WinverThermalRows
+  $validTemps = @($temps | Where-Object { $_.valid })
+  [pscustomobject]@{
+    activePowerScheme = Invoke-Safe { (powercfg /getactivescheme) -join ' ' } ''
+    maxCelsius = if ($validTemps.Count -gt 0) { [math]::Round(($validTemps | Measure-Object celsius -Maximum).Maximum, 1) } else { $null }
+    thermalZones = $temps
+    processorSettings = @(
+      Invoke-WinverPowercfg -Name 'cooling policy' -Arguments @('/query', 'SCHEME_CURRENT', $ids.processor, $ids.cooling) -AllowFailure
+      Invoke-WinverPowercfg -Name 'processor min' -Arguments @('/query', 'SCHEME_CURRENT', $ids.processor, $ids.min) -AllowFailure
+      Invoke-WinverPowercfg -Name 'processor max' -Arguments @('/query', 'SCHEME_CURRENT', $ids.processor, $ids.max) -AllowFailure
+      Invoke-WinverPowercfg -Name 'boost mode' -Arguments @('/query', 'SCHEME_CURRENT', $ids.processor, $ids.boost) -AllowFailure
+      Invoke-WinverPowercfg -Name 'energy performance preference' -Arguments @('/query', 'SCHEME_CURRENT', $ids.processor, $ids.epp) -AllowFailure
+    )
+  } | ConvertTo-Json -Depth 6
+}
+
+function Show-CoolingPlan {
+  $profile = $CoolingProfile
+  if ($profile -eq 'status') {
+    Show-CoolingStatus
+    return
+  }
+
+  $plans = @{
+    max = @(
+      'activate high-performance power scheme when Windows exposes it',
+      'prefer active cooling on AC',
+      'set AC processor min/max to 100/100 percent',
+      'set processor boost mode to aggressive where exposed',
+      'set energy-performance preference to maximum performance where exposed',
+      'disable plugged-in sleep and turn display off quickly'
+    )
+    cool = @(
+      'use balanced power scheme',
+      'prefer active cooling on AC',
+      'set AC processor min/max to 5/85 percent',
+      'disable boost where exposed',
+      'keep plugged-in sleep disabled for server use',
+      'reduce heat while staying remotely reachable'
+    )
+    balanced = @(
+      'use balanced power scheme',
+      'prefer active cooling on AC',
+      'set AC processor min/max to 5/100 percent',
+      'use efficient boost where exposed',
+      'keep plugged-in sleep disabled for server use'
+    )
+    quiet = @(
+      'use balanced power scheme',
+      'prefer passive cooling on AC',
+      'set AC processor min/max to 5/65 percent',
+      'disable boost where exposed',
+      'trade speed for less fan noise and lower heat'
+    )
+  }
+
+  [pscustomobject]@{
+    mode = $Mode
+    profile = $profile
+    directFanControl = 'Not exposed through a stable Surface Windows API; using Windows cooling policy and processor controls instead.'
+    changes = $plans[$profile]
+    rollback = 'Use winver admin rollback --apply or another cooling profile.'
+  } | Format-List
+}
+
+function Apply-CoolingProfile {
+  Assert-Admin
+  if ($CoolingProfile -eq 'status') { throw "Use --dry-run for cooling status, or pass --profile max|cool|balanced|quiet with --apply." }
+
+  $paths = New-WinverSnapshot -Reason "cooling-$CoolingProfile"
+  $ids = Get-CoolingSettingIds
+  $results = @()
+
+  switch ($CoolingProfile) {
+    'max' {
+      $results += Invoke-WinverPowercfg -Name 'high performance scheme' -Arguments @('/setactive', 'SCHEME_MAX') -AllowFailure
+      $results += Invoke-WinverPowercfg -Name 'disable AC standby' -Arguments @('/change', 'standby-timeout-ac', '0') -AllowFailure
+      $results += Invoke-WinverPowercfg -Name 'disable AC hibernate timeout' -Arguments @('/change', 'hibernate-timeout-ac', '0') -AllowFailure
+      $results += Invoke-WinverPowercfg -Name 'fast display timeout' -Arguments @('/change', 'monitor-timeout-ac', '1') -AllowFailure
+      $results += Set-CoolingValue -Name 'active cooling' -Setting $ids.cooling -Value 1
+      $results += Set-CoolingValue -Name 'processor min 100' -Setting $ids.min -Value 100
+      $results += Set-CoolingValue -Name 'processor max 100' -Setting $ids.max -Value 100
+      $results += Set-CoolingValue -Name 'boost aggressive' -Setting $ids.boost -Value 2
+      $results += Set-CoolingValue -Name 'performance preference 0' -Setting $ids.epp -Value 0
+    }
+    'cool' {
+      $results += Invoke-WinverPowercfg -Name 'balanced scheme' -Arguments @('/setactive', 'SCHEME_BALANCED') -AllowFailure
+      $results += Invoke-WinverPowercfg -Name 'disable AC standby' -Arguments @('/change', 'standby-timeout-ac', '0') -AllowFailure
+      $results += Invoke-WinverPowercfg -Name 'disable AC hibernate timeout' -Arguments @('/change', 'hibernate-timeout-ac', '0') -AllowFailure
+      $results += Invoke-WinverPowercfg -Name 'short display timeout' -Arguments @('/change', 'monitor-timeout-ac', '5') -AllowFailure
+      $results += Set-CoolingValue -Name 'active cooling' -Setting $ids.cooling -Value 1
+      $results += Set-CoolingValue -Name 'processor min 5' -Setting $ids.min -Value 5
+      $results += Set-CoolingValue -Name 'processor max 85' -Setting $ids.max -Value 85
+      $results += Set-CoolingValue -Name 'boost disabled' -Setting $ids.boost -Value 0
+      $results += Set-CoolingValue -Name 'performance preference 35' -Setting $ids.epp -Value 35
+    }
+    'balanced' {
+      $results += Invoke-WinverPowercfg -Name 'balanced scheme' -Arguments @('/setactive', 'SCHEME_BALANCED') -AllowFailure
+      $results += Invoke-WinverPowercfg -Name 'disable AC standby' -Arguments @('/change', 'standby-timeout-ac', '0') -AllowFailure
+      $results += Invoke-WinverPowercfg -Name 'disable AC hibernate timeout' -Arguments @('/change', 'hibernate-timeout-ac', '0') -AllowFailure
+      $results += Invoke-WinverPowercfg -Name 'normal display timeout' -Arguments @('/change', 'monitor-timeout-ac', '10') -AllowFailure
+      $results += Set-CoolingValue -Name 'active cooling' -Setting $ids.cooling -Value 1
+      $results += Set-CoolingValue -Name 'processor min 5' -Setting $ids.min -Value 5
+      $results += Set-CoolingValue -Name 'processor max 100' -Setting $ids.max -Value 100
+      $results += Set-CoolingValue -Name 'boost efficient' -Setting $ids.boost -Value 3
+      $results += Set-CoolingValue -Name 'performance preference 50' -Setting $ids.epp -Value 50
+    }
+    'quiet' {
+      $results += Invoke-WinverPowercfg -Name 'balanced scheme' -Arguments @('/setactive', 'SCHEME_BALANCED') -AllowFailure
+      $results += Invoke-WinverPowercfg -Name 'AC standby 30 minutes' -Arguments @('/change', 'standby-timeout-ac', '30') -AllowFailure
+      $results += Invoke-WinverPowercfg -Name 'disable AC hibernate timeout' -Arguments @('/change', 'hibernate-timeout-ac', '0') -AllowFailure
+      $results += Invoke-WinverPowercfg -Name 'normal display timeout' -Arguments @('/change', 'monitor-timeout-ac', '10') -AllowFailure
+      $results += Set-CoolingValue -Name 'passive cooling' -Setting $ids.cooling -Value 0
+      $results += Set-CoolingValue -Name 'processor min 5' -Setting $ids.min -Value 5
+      $results += Set-CoolingValue -Name 'processor max 65' -Setting $ids.max -Value 65
+      $results += Set-CoolingValue -Name 'boost disabled' -Setting $ids.boost -Value 0
+      $results += Set-CoolingValue -Name 'performance preference 80' -Setting $ids.epp -Value 80
+    }
+  }
+
+  $results += Invoke-WinverPowercfg -Name 'refresh active scheme' -Arguments @('/setactive', 'SCHEME_CURRENT') -AllowFailure
+
+  Write-Host "Cooling profile applied: $CoolingProfile" -ForegroundColor Green
+  Write-Host "Snapshot: $($paths.snapshot)"
+  Write-Host "Rollback: $($paths.rollback)"
+  $results | Format-Table name, ok, code -AutoSize
+  Write-Audit -Result "cooling-$CoolingProfile-applied" -Detail @{ snapshot = $paths.snapshot; rollback = $paths.rollback; results = $results }
+}
+
 function Apply-ServerProfile {
   Assert-Admin
   Assert-BitLockerPrepared
@@ -227,7 +417,7 @@ function Apply-ServerProfile {
   powercfg /change monitor-timeout-ac 5 | Out-Null
   powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP RTCWAKE 1 | Out-Null
   powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0 | Out-Null
-  powercfg /setactive SCHEME_MIN | Out-Null
+  powercfg /setactive SCHEME_MAX | Out-Null
 
   Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue
   Start-Service -Name sshd -ErrorAction SilentlyContinue
@@ -256,7 +446,7 @@ function Apply-Lockdown {
   Assert-BitLockerPrepared
   $paths = New-WinverSnapshot -Reason 'lockdown'
 
-  powercfg /setactive SCHEME_MIN | Out-Null
+  powercfg /setactive SCHEME_MAX | Out-Null
   powercfg /change standby-timeout-ac 0 | Out-Null
   powercfg /change hibernate-timeout-ac 0 | Out-Null
   powercfg /change monitor-timeout-ac 1 | Out-Null
@@ -376,6 +566,7 @@ try {
     'thermal' { Invoke-Safe { Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature } '(thermal sensors unavailable)' | Format-List; Write-Audit -Result 'read-thermal' }
     'server-profile' { if ($Mode -eq 'Apply') { Apply-ServerProfile } else { Show-ServerProfilePlan; Write-Audit -Result 'dry-run-server-profile' } }
     'lockdown' { if ($Mode -eq 'Apply') { Apply-Lockdown } else { Show-LockdownPlan; Write-Audit -Result 'dry-run-lockdown' } }
+    'cooling' { if ($Mode -eq 'Apply') { Apply-CoolingProfile } else { Show-CoolingPlan; Write-Audit -Result "dry-run-cooling-$CoolingProfile" } }
     'unlock' { if ($Mode -eq 'Apply') { Apply-Unlock } else { Show-UnlockPlan; Write-Audit -Result 'dry-run-unlock' } }
     'rollback' { if ($Mode -eq 'Apply') { Apply-Rollback } else { Get-ChildItem -Path $snapshotRoot -Filter '*.rollback.ps1' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 5; Write-Audit -Result 'dry-run-rollback' } }
     'export-recovery' { if ($Mode -eq 'Apply') { Apply-ExportRecovery } else { Write-Host "Would export BitLocker recovery data to $recoveryRoot and lock it to Administrators/SYSTEM."; Write-Audit -Result 'dry-run-export-recovery' } }

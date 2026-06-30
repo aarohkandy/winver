@@ -49,7 +49,7 @@ switch ($Action) {
     powercfg /change standby-timeout-ac 0 | Out-Null
     powercfg /change hibernate-timeout-ac 0 | Out-Null
     powercfg /change monitor-timeout-ac 10 | Out-Null
-    powercfg /setactive SCHEME_MIN | Out-Null
+    powercfg /setactive SCHEME_MAX | Out-Null
     Write-Output "Server mode enabled: plugged-in sleep disabled, display timeout kept short, high performance active."
   }
   'balanced' {

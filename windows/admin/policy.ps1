@@ -11,6 +11,7 @@ $script:WinverAdminActions = @(
   'thermal',
   'server-profile',
   'lockdown',
+  'cooling',
   'unlock',
   'rollback',
   'export-recovery',
@@ -23,6 +24,7 @@ $script:WinverAdminActions = @(
 $script:WinverDangerousActions = @(
   'server-profile',
   'lockdown',
+  'cooling',
   'unlock',
   'rollback',
   'export-recovery',
@@ -59,14 +61,16 @@ function ConvertTo-WinverSignaturePayload {
     [Parameter(Mandatory = $true)][string]$Action,
     [Parameter(Mandatory = $true)][string]$Mode,
     [Parameter(Mandatory = $true)][string]$RequestId,
-    [string]$Command = ''
+    [string]$Command = '',
+    [string]$Profile = ''
   )
 
   @(
     $Action.ToLowerInvariant(),
     $Mode,
     $RequestId,
-    $Command
+    $Command,
+    $Profile
   ) -join '|'
 }
 

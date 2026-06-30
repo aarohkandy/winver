@@ -31,6 +31,7 @@ Usage:
   .\windows\winver.ps1 admin status
   .\windows\winver.ps1 admin server-profile --dry-run
   .\windows\winver.ps1 admin lockdown --dry-run
+  .\windows\winver.ps1 admin cooling --profile max --dry-run
   .\windows\winver.ps1 admin unlock --dry-run
   .\windows\winver.ps1 uefi inventory
 
@@ -44,13 +45,14 @@ function New-LocalAdminSignature {
     [string]$Action,
     [string]$Mode,
     [string]$RequestId,
-    [string]$Command = ''
+    [string]$Command = '',
+    [string]$Profile = ''
   )
 
   . (Join-Path $RepoPath 'windows\admin\policy.ps1')
   $key = Get-WinverAdminKey
   if (-not $key) { return '' }
-  $payload = ConvertTo-WinverSignaturePayload -Action $Action -Mode $Mode -RequestId $RequestId -Command $Command
+  $payload = ConvertTo-WinverSignaturePayload -Action $Action -Mode $Mode -RequestId $RequestId -Command $Command -Profile $Profile
   New-WinverHmacSignature -Key $key -Payload $payload
 }
 
@@ -62,12 +64,21 @@ function Invoke-LocalAdmin {
   $force = $false
   $skipBitLocker = $false
   $commandText = ''
+  $coolingProfile = ''
   for ($i = 1; $i -lt $Args.Count; $i++) {
     switch ($Args[$i]) {
       '--apply' { $mode = 'Apply' }
       '--dry-run' { $mode = 'DryRun' }
       '--force' { $force = $true }
       '--skip-bitlocker-check' { $skipBitLocker = $true }
+      '--profile' {
+        if (($i + 1) -ge $Args.Count) { throw '--profile needs max, cool, balanced, quiet, or status.' }
+        $coolingProfile = $Args[$i + 1].ToLowerInvariant()
+        if (@('max', 'cool', 'balanced', 'quiet', 'status') -notcontains $coolingProfile) {
+          throw '--profile needs max, cool, balanced, quiet, or status.'
+        }
+        $i += 1
+      }
       '--command' {
         if (($i + 1) -lt $Args.Count) {
           $commandText = ($Args[($i + 1)..($Args.Count - 1)] -join ' ')
@@ -86,9 +97,11 @@ function Invoke-LocalAdmin {
       }
     }
   }
+  if ($action -ne 'cooling' -and $coolingProfile) { throw '--profile is only supported with admin cooling.' }
+  if ($action -eq 'cooling' -and -not $coolingProfile) { $coolingProfile = 'status' }
 
   $requestId = [guid]::NewGuid().ToString()
-  $signature = New-LocalAdminSignature -Action $action -Mode $mode -RequestId $requestId -Command $commandText
+  $signature = New-LocalAdminSignature -Action $action -Mode $mode -RequestId $requestId -Command $commandText -Profile $coolingProfile
   $brokerParams = @{
     Action = $action
     Mode = $mode
@@ -98,6 +111,7 @@ function Invoke-LocalAdmin {
   if ($force) { $brokerParams.Force = $true }
   if ($skipBitLocker) { $brokerParams.SkipBitLockerCheck = $true }
   if ($commandText) { $brokerParams.AdminShellCommand = $commandText }
+  if ($coolingProfile) { $brokerParams.CoolingProfile = $coolingProfile }
   & (Join-Path $RepoPath 'windows\admin\broker.ps1') @brokerParams
 }
 

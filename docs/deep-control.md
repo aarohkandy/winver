@@ -36,6 +36,11 @@ winver admin server-profile --dry-run
 winver admin server-profile --apply
 winver admin lockdown --dry-run
 winver admin lockdown --apply
+winver admin cooling --profile max --dry-run
+winver admin cooling --profile max --apply
+winver admin cooling --profile cool --apply
+winver admin cooling --profile balanced --apply
+winver admin cooling --profile quiet --apply
 winver admin unlock --apply
 winver admin rollback --dry-run
 winver admin rollback --apply
@@ -85,6 +90,35 @@ winver admin unlock --apply
 ```
 
 Hardware thermal throttling still applies. This does not override firmware thermal protection or touch fan curves.
+
+## Cooling profiles
+
+Surface fan curves are firmware-controlled and are not exposed through a stable safe Windows API. `winver admin cooling` controls the closest safe equivalents: Windows power scheme, active/passive cooling policy, processor min/max state, processor boost mode, and energy-performance preference.
+
+Profiles:
+
+- `max`: let it run hot and fast. High performance, active cooling, CPU 100/100, aggressive boost.
+- `cool`: keep it awake and reachable, but reduce sustained heat. Active cooling, CPU max around 85 percent, boost disabled.
+- `balanced`: server-friendly normal mode. Active cooling, CPU 5/100, efficient boost.
+- `quiet`: laptop-ish quiet mode. Passive cooling, CPU max around 65 percent, boost disabled.
+
+Preview first:
+
+```sh
+winver admin cooling --profile max --dry-run
+```
+
+Apply with signing and audit:
+
+```sh
+winver admin cooling --profile max --apply
+```
+
+Rollback to the most recent snapshot helper:
+
+```sh
+winver admin rollback --apply
+```
 
 ## UEFI / SEMM
 

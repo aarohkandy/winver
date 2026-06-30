@@ -17,7 +17,8 @@ test("admin parser defaults to safe dry-run status", () => {
     mode: "DryRun",
     force: false,
     skipBitLockerCheck: false,
-    command: ""
+    command: "",
+    profile: ""
   });
 });
 
@@ -27,7 +28,8 @@ test("admin parser accepts signed apply shape", () => {
     mode: "Apply",
     force: false,
     skipBitLockerCheck: true,
-    command: ""
+    command: "",
+    profile: ""
   });
 });
 
@@ -39,6 +41,7 @@ test("admin-shell requires explicit apply and force", () => {
 test("dangerous apply actions need signatures", () => {
   assert.equal(needsApplySignature("server-profile", "Apply"), true);
   assert.equal(needsApplySignature("lockdown", "Apply"), true);
+  assert.equal(needsApplySignature("cooling", "Apply"), true);
   assert.equal(needsApplySignature("unlock", "Apply"), true);
   assert.equal(needsApplySignature("server-profile", "DryRun"), false);
   assert.equal(needsApplySignature("status", "Apply"), false);
@@ -49,15 +52,30 @@ test("admin parser accepts lockdown and unlock", () => {
   assert.equal(parseAdminArgs(["unlock", "--apply"]).mode, "Apply");
 });
 
+test("admin parser accepts cooling profiles", () => {
+  assert.deepEqual(parseAdminArgs(["cooling", "--profile", "max", "--apply"]), {
+    action: "cooling",
+    mode: "Apply",
+    force: false,
+    skipBitLockerCheck: false,
+    command: "",
+    profile: "max"
+  });
+  assert.equal(parseAdminArgs(["cooling"]).profile, "status");
+  assert.throws(() => parseAdminArgs(["status", "--profile", "max"]), /only supported/);
+});
+
 test("signature payload and hmac are stable", () => {
   const request = {
     action: "server-profile",
     mode: "Apply",
     requestId: "abc",
-    command: ""
+    command: "",
+    profile: ""
   };
-  assert.equal(signaturePayload(request), "server-profile|Apply|abc|");
-  assert.equal(signAdminRequest("secret", request), "2962533db21d0b0ae45edc73290c55f7b291ef57054a3f7b3700814260d77ec2");
+  assert.equal(signaturePayload(request), "server-profile|Apply|abc||");
+  assert.equal(signAdminRequest("secret", request), "696157b66fc7cebf1562e983ed4e1c6024419917dffe653d9e715f597edee158");
+  assert.equal(signAdminRequest("secret", { action: "cooling", mode: "Apply", requestId: "abc", command: "", profile: "max" }), "7b972570c8e5d8d75197fb022d670ce6be41f2580d1acf65c935983b3d695294");
 });
 
 test("uefi parser is read-oriented by default", () => {

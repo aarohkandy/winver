@@ -30,6 +30,7 @@ winver server-mode
 winver admin status
 winver admin server-profile --dry-run
 winver admin lockdown --dry-run
+winver admin cooling --profile max --dry-run
 winver uefi inventory
 ```
 
@@ -218,7 +219,7 @@ winver control balanced
 winver control reboot
 ```
 
-Fan control is not enabled by default because Surface fan control is not exposed through a safe, stable Windows API. The control script does expose thermal readings when Windows reports them, power mode controls, reboot/shutdown, service status, and worker process visibility.
+Direct fan RPM control is not enabled because Surface fan curves are not exposed through a safe, stable Windows API. The admin cooling profiles control the supported fan-adjacent knobs: active/passive cooling policy, CPU limits, boost behavior, and power scheme.
 
 ### Deep admin controls
 
@@ -228,6 +229,11 @@ winver admin server-profile --dry-run
 winver admin server-profile --apply
 winver admin lockdown --dry-run
 winver admin lockdown --apply
+winver admin cooling --profile max --dry-run
+winver admin cooling --profile max --apply
+winver admin cooling --profile cool --apply
+winver admin cooling --profile balanced --apply
+winver admin cooling --profile quiet --apply
 winver admin unlock --apply
 winver admin rollback --dry-run
 winver admin export-recovery --apply
@@ -237,6 +243,15 @@ winver admin break-glass --apply
 Apply-level admin actions require the separate admin signing key. They write audit logs and snapshots under `%ProgramData%\winver`.
 
 `lockdown` is the hotter plugged-in server mode: no AC sleep, fast display-off, high-performance AC profile, processor min/max at 100 percent on AC, active cooling preference where Windows exposes it, and SSH/Tailscale kept ready. `unlock` brings it back toward normal plugged-in laptop behavior while leaving remote access available.
+
+`cooling` is the fan-adjacent control surface. Surface devices do not expose a stable direct fan RPM/curve API to Windows, so `winver` controls the safe knobs Windows does expose:
+
+- `--profile max`: high-performance scheme, active cooling, CPU min/max 100/100, aggressive boost.
+- `--profile cool`: active cooling, CPU capped around 85 percent, boost disabled for sustained heat control.
+- `--profile balanced`: active cooling, normal CPU range, efficient boost.
+- `--profile quiet`: passive cooling, CPU capped around 65 percent, boost disabled.
+
+Every applied cooling profile is signed, audited, and snapshotted.
 
 ### Surface UEFI / SEMM
 
