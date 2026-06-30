@@ -10,46 +10,23 @@ $DashboardRoot = Join-Path $WinverHome 'dashboard'
 $LivePath = Join-Path $DashboardRoot 'live.json'
 $TempPath = Join-Path $DashboardRoot 'live.tmp'
 $PidPath = Join-Path $DashboardRoot 'sampler.pid'
+$ProcessorCount = [math]::Max([Environment]::ProcessorCount, 1)
 
 New-Item -ItemType Directory -Force -Path $DashboardRoot | Out-Null
 Set-Content -LiteralPath $PidPath -Value $PID -Encoding ascii
 
-function New-CpuCounter {
-  try {
-    $counter = [System.Diagnostics.PerformanceCounter]::new('Processor', '% Processor Time', '_Total')
-    $null = $counter.NextValue()
-    return $counter
-  } catch {
-    return $null
-  }
-}
-
-function Get-CpuSnapshot {
-  param($Counter)
-  $cpuValues = @(Get-CimInstance Win32_Processor |
-    Where-Object { $null -ne $_.LoadPercentage } |
-    ForEach-Object { [double]$_.LoadPercentage })
-  if ($cpuValues.Count -gt 0) {
-    return @{
-      loadPercent = [math]::Round(($cpuValues | Measure-Object -Average).Average, 1)
-      source = 'cim-sampler'
+function Get-TotalProcessCpuSeconds {
+  $total = 0.0
+  foreach ($process in [System.Diagnostics.Process]::GetProcesses()) {
+    try {
+      $total += $process.TotalProcessorTime.TotalSeconds
+    } catch {
+      # Processes can exit while being sampled.
+    } finally {
+      try { $process.Dispose() } catch {}
     }
   }
-
-  if ($Counter) {
-    $value = [double]$Counter.NextValue()
-    if (-not [double]::IsNaN($value)) {
-      return @{
-        loadPercent = [math]::Round([math]::Min([math]::Max($value, 0), 100), 1)
-        source = 'performance-counter-fallback'
-      }
-    }
-  }
-
-  return @{
-    loadPercent = $null
-    source = 'unavailable'
-  }
+  $total
 }
 
 function Get-MemorySnapshot {
@@ -80,28 +57,43 @@ function Get-SmoothedCpuLoad {
   [math]::Round((([double]$valid[$middle - 1] + [double]$valid[$middle]) / 2), 1)
 }
 
-$cpuCounter = New-CpuCounter
 $cpuSamples = New-Object System.Collections.Generic.List[double]
+$lastCpuSeconds = Get-TotalProcessCpuSeconds
+$lastSampleAt = Get-Date
+$lastMemory = Get-MemorySnapshot
+$lastBattery = Get-BatterySnapshot
+$tick = 0
+
 Start-Sleep -Milliseconds ([math]::Max($IntervalMilliseconds, 250))
 
 while ($true) {
-  $cpuSnapshot = Get-CpuSnapshot -Counter $cpuCounter
-  if ($null -ne $cpuSnapshot.loadPercent) {
-    $cpuSamples.Add([double]$cpuSnapshot.loadPercent)
-    while ($cpuSamples.Count -gt 7) { $cpuSamples.RemoveAt(0) }
-  }
+  $now = Get-Date
+  $currentCpuSeconds = Get-TotalProcessCpuSeconds
+  $elapsedSeconds = [math]::Max(($now - $lastSampleAt).TotalSeconds, 0.001)
+  $instantCpu = (($currentCpuSeconds - $lastCpuSeconds) / ($elapsedSeconds * $ProcessorCount)) * 100
+  $instantCpu = [math]::Round([math]::Min([math]::Max($instantCpu, 0), 100), 1)
+
+  $lastCpuSeconds = $currentCpuSeconds
+  $lastSampleAt = $now
+  $cpuSamples.Add([double]$instantCpu)
+  while ($cpuSamples.Count -gt 7) { $cpuSamples.RemoveAt(0) }
   $smoothedCpu = Get-SmoothedCpuLoad -Samples ([double[]]$cpuSamples.ToArray())
+
+  if ($tick % 5 -eq 0 -or -not $lastMemory) { $lastMemory = Get-MemorySnapshot }
+  if ($tick % 30 -eq 0) { $lastBattery = Get-BatterySnapshot }
+  $tick += 1
+
   $snapshot = [pscustomobject]@{
     collectedAt = (Get-Date).ToString('o')
     pid = $PID
     cpu = @{
-      loadPercent = if ($null -ne $smoothedCpu) { $smoothedCpu } else { $cpuSnapshot.loadPercent }
-      instantPercent = $cpuSnapshot.loadPercent
-      source = $cpuSnapshot.source
+      loadPercent = if ($null -ne $smoothedCpu) { $smoothedCpu } else { $instantCpu }
+      instantPercent = $instantCpu
+      source = 'process-delta'
       smoothing = 'median-7'
     }
-    memory = Get-MemorySnapshot
-    battery = Get-BatterySnapshot
+    memory = $lastMemory
+    battery = $lastBattery
   }
 
   $snapshot | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $TempPath -Encoding utf8

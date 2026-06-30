@@ -13,7 +13,7 @@ $DashboardRoot = Join-Path $WinverHome 'dashboard'
 $SlowCachePath = Join-Path $DashboardRoot 'slow.json'
 $LivePath = Join-Path $DashboardRoot 'live.json'
 $SamplerPidPath = Join-Path $DashboardRoot 'sampler.pid'
-$ExpectedSamplerSource = 'cim-sampler'
+$ExpectedSamplerSource = 'process-delta'
 $ExpectedSamplerSmoothing = 'median-7'
 
 function Invoke-Safe {
