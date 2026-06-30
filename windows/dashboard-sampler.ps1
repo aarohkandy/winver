@@ -71,15 +71,35 @@ function Get-BatterySnapshot {
   }
 }
 
+function Get-SmoothedCpuLoad {
+  param([double[]]$Samples)
+  $valid = @($Samples | Where-Object { $null -ne $_ } | Sort-Object)
+  if ($valid.Count -eq 0) { return $null }
+  $middle = [math]::Floor($valid.Count / 2)
+  if ($valid.Count % 2 -eq 1) { return [math]::Round([double]$valid[$middle], 1) }
+  [math]::Round((([double]$valid[$middle - 1] + [double]$valid[$middle]) / 2), 1)
+}
+
 $cpuCounter = New-CpuCounter
+$cpuSamples = New-Object System.Collections.Generic.List[double]
 Start-Sleep -Milliseconds ([math]::Max($IntervalMilliseconds, 250))
 
 while ($true) {
   $cpuSnapshot = Get-CpuSnapshot -Counter $cpuCounter
+  if ($null -ne $cpuSnapshot.loadPercent) {
+    $cpuSamples.Add([double]$cpuSnapshot.loadPercent)
+    while ($cpuSamples.Count -gt 7) { $cpuSamples.RemoveAt(0) }
+  }
+  $smoothedCpu = Get-SmoothedCpuLoad -Samples ([double[]]$cpuSamples.ToArray())
   $snapshot = [pscustomobject]@{
     collectedAt = (Get-Date).ToString('o')
     pid = $PID
-    cpu = $cpuSnapshot
+    cpu = @{
+      loadPercent = if ($null -ne $smoothedCpu) { $smoothedCpu } else { $cpuSnapshot.loadPercent }
+      instantPercent = $cpuSnapshot.loadPercent
+      source = $cpuSnapshot.source
+      smoothing = 'median-7'
+    }
     memory = Get-MemorySnapshot
     battery = Get-BatterySnapshot
   }

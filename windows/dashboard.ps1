@@ -14,6 +14,7 @@ $SlowCachePath = Join-Path $DashboardRoot 'slow.json'
 $LivePath = Join-Path $DashboardRoot 'live.json'
 $SamplerPidPath = Join-Path $DashboardRoot 'sampler.pid'
 $ExpectedSamplerSource = 'cim-sampler'
+$ExpectedSamplerSmoothing = 'median-7'
 
 function Invoke-Safe {
   param([scriptblock]$Script, $Fallback = $null)
@@ -91,7 +92,10 @@ function Start-DashboardSampler {
 
 function Get-LiveSnapshotOrStartSampler {
   $live = Get-LiveSnapshot
-  if ($live -and $live.cpu -and $live.cpu.source -and ([string]$live.cpu.source) -ne $ExpectedSamplerSource) {
+  if ($live -and $live.cpu -and (
+      ([string]$live.cpu.source) -ne $ExpectedSamplerSource -or
+      ([string]$live.cpu.smoothing) -ne $ExpectedSamplerSmoothing
+    )) {
     Stop-DashboardSampler
     $live = $null
   }
