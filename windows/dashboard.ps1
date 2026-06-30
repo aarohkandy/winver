@@ -1,12 +1,16 @@
 [CmdletBinding()]
 param(
   [int]$RecentJobs = 12,
+  [int]$SlowTtlSeconds = 10,
+  [switch]$ForceRefresh,
   [string]$WinverHome = (Join-Path $env:USERPROFILE '.winver')
 )
 
 $ErrorActionPreference = 'Stop'
 
 $LogRoot = Join-Path $WinverHome 'logs'
+$DashboardRoot = Join-Path $WinverHome 'dashboard'
+$SlowCachePath = Join-Path $DashboardRoot 'slow.json'
 
 function Invoke-Safe {
   param([scriptblock]$Script, $Fallback = $null)
@@ -99,12 +103,51 @@ function Get-WinverJobs {
   })
 }
 
+function Get-CachedSlowSnapshot {
+  if ($ForceRefresh -or $SlowTtlSeconds -le 0) { return $null }
+  if (-not (Test-Path -LiteralPath $SlowCachePath)) { return $null }
+
+  $file = Get-Item -LiteralPath $SlowCachePath -ErrorAction SilentlyContinue
+  if (-not $file) { return $null }
+  if (((Get-Date) - $file.LastWriteTime).TotalSeconds -gt $SlowTtlSeconds) { return $null }
+
+  Invoke-Safe { Get-Content -LiteralPath $SlowCachePath -Raw | ConvertFrom-Json } $null
+}
+
+function Set-CachedSlowSnapshot {
+  param($Snapshot)
+  New-Item -ItemType Directory -Force -Path $DashboardRoot | Out-Null
+  $Snapshot | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $SlowCachePath -Encoding utf8
+}
+
+function Get-SlowSnapshot {
+  $cached = Get-CachedSlowSnapshot
+  if ($cached) { return $cached }
+
+  $temps = Get-ValidTemperature
+  $validTemps = @($temps | Where-Object { $_.valid })
+  $snapshot = [pscustomobject]@{
+    slowCollectedAt = (Get-Date).ToString('o')
+    power = @{
+      activeScheme = Invoke-Safe { (powercfg /getactivescheme) -join ' ' } ''
+    }
+    thermal = @{
+      maxCelsius = if ($validTemps.Count -gt 0) { [math]::Round(($validTemps | Measure-Object celsius -Maximum).Maximum, 1) } else { $null }
+      zones = $temps
+    }
+    services = Get-WinverServices
+    processes = Get-WinverProcesses
+    jobs = Get-WinverJobs
+  }
+
+  Invoke-Safe { Set-CachedSlowSnapshot -Snapshot $snapshot } | Out-Null
+  $snapshot
+}
+
 $os = Get-CimInstance Win32_OperatingSystem
 $cpu = @(Get-CimInstance Win32_Processor | Select-Object -First 1)[0]
-$temps = Get-ValidTemperature
-$validTemps = @($temps | Where-Object { $_.valid })
 $battery = Invoke-Safe { Get-CimInstance Win32_Battery | Select-Object -First 1 } $null
-$powerScheme = Invoke-Safe { (powercfg /getactivescheme) -join ' ' } ''
+$slow = Get-SlowSnapshot
 
 [pscustomobject]@{
   collectedAt = (Get-Date).ToString('o')
@@ -130,14 +173,14 @@ $powerScheme = Invoke-Safe { (powercfg /getactivescheme) -join ' ' } ''
       status = [string]$battery.BatteryStatus
     }
   } else { $null }
-  power = @{
-    activeScheme = $powerScheme
+  power = $slow.power
+  thermal = $slow.thermal
+  services = $slow.services
+  processes = $slow.processes
+  jobs = $slow.jobs
+  dashboard = @{
+    slowCollectedAt = $slow.slowCollectedAt
+    slowTtlSeconds = $SlowTtlSeconds
+    forceRefresh = [bool]$ForceRefresh
   }
-  thermal = @{
-    maxCelsius = if ($validTemps.Count -gt 0) { [math]::Round(($validTemps | Measure-Object celsius -Maximum).Maximum, 1) } else { $null }
-    zones = $temps
-  }
-  services = Get-WinverServices
-  processes = Get-WinverProcesses
-  jobs = Get-WinverJobs
 } | ConvertTo-Json -Depth 8

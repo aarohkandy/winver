@@ -1,7 +1,8 @@
 const state = {
   paused: false,
   selectedJob: null,
-  timer: null
+  timer: null,
+  refreshing: false
 };
 
 const els = {
@@ -21,6 +22,7 @@ const els = {
   taskList: document.querySelector("#task-list"),
   controlStatus: document.querySelector("#control-status"),
   services: document.querySelector("#services"),
+  thermalSummary: document.querySelector("#thermal-summary"),
   thermals: document.querySelector("#thermal-list"),
   processes: document.querySelector("#processes"),
   selectedJob: document.querySelector("#selected-job"),
@@ -33,14 +35,17 @@ els.pause.addEventListener("click", () => {
   els.pause.textContent = state.paused ? "Resume" : "Pause";
 });
 
-els.refresh.addEventListener("click", () => refresh());
+els.refresh.addEventListener("click", () => refresh({ force: true }));
 document.querySelectorAll("[data-control='cooling']").forEach((button) => {
   button.addEventListener("click", () => applyCooling(button.dataset.profile));
 });
 
-async function refresh() {
+async function refresh(options = {}) {
+  if (state.refreshing) return;
+  state.refreshing = true;
   try {
-    const response = await fetch("/api/snapshot", { cache: "no-store" });
+    const suffix = options.force ? "?force=1" : "";
+    const response = await fetch(`/api/snapshot${suffix}`, { cache: "no-store" });
     const payload = await response.json();
     if (!payload.ok) throw new Error(payload.error || "Surface unavailable");
     render(payload.data);
@@ -48,6 +53,8 @@ async function refresh() {
   } catch (error) {
     setConnection("offline", true);
     els.lastUpdated.textContent = error.message;
+  } finally {
+    state.refreshing = false;
   }
 }
 
@@ -62,11 +69,11 @@ function render(data) {
   setPercent(els.memoryLoad, els.memoryBar, memory.usedPercent);
   setTemperature(thermal.maxCelsius);
   els.battery.textContent = data.battery ? `${data.battery.percent}%` : "AC";
-  els.lastUpdated.textContent = `Updated ${formatTime(data.collectedAt)}`;
+  els.lastUpdated.textContent = formatFreshness(data);
 
   renderTasks(data.jobs || []);
   renderServices(data.services || []);
-  renderThermals((thermal.zones || []).filter((zone) => zone.valid));
+  renderThermals((thermal.zones || []).filter((zone) => zone.valid), thermal.maxCelsius);
   renderProcesses(data.processes || []);
 }
 
@@ -119,9 +126,9 @@ function renderTasks(jobs) {
         <span>${formatBytes(job.stdoutBytes)} out / ${formatBytes(job.stderrBytes)} err</span>
       </div>
       <div class="task-actions">
-        <button class="task-open" type="button">Logs</button>
-        <button class="task-pull" type="button">Pull</button>
-        ${job.running ? '<button class="task-stop danger" type="button">Stop</button>' : ''}
+        <button class="task-open" data-action="logs" data-job-id="${escapeHtml(job.id)}" type="button">Logs</button>
+        <button class="task-pull" data-action="pull-log" data-job-id="${escapeHtml(job.id)}" type="button">Pull</button>
+        ${job.running ? `<button class="task-stop danger" data-action="stop-job" data-job-id="${escapeHtml(job.id)}" type="button">Stop</button>` : ''}
       </div>
     `;
     item.querySelector(".task-open").addEventListener("click", () => loadLogs(job.id));
@@ -192,12 +199,12 @@ async function applyCooling(profile) {
 
 async function stopJob(jobId) {
   await sendControl({ type: "stop-job", target: jobId }, `stopped job ${jobId}`);
-  await refresh();
+  await refresh({ force: true });
 }
 
 async function stopProcess(pid) {
   await sendControl({ type: "stop-process", pid }, `stopped process ${pid}`);
-  await refresh();
+  await refresh({ force: true });
 }
 
 async function sendControl(body, successText) {
@@ -233,8 +240,12 @@ function renderServices(services) {
   }
 }
 
-function renderThermals(zones) {
+function renderThermals(zones, maxCelsius) {
   els.thermals.innerHTML = "";
+  const maxText = maxCelsius === null || maxCelsius === undefined ? "-- C" : `${Number(maxCelsius).toFixed(1)} C`;
+  els.thermalSummary.textContent = zones.length
+    ? `${zones.length} sensors · max ${maxText}`
+    : "no valid sensors";
   if (!zones.length) {
     els.thermals.append(empty("No thermal sensors."));
     return;
@@ -257,10 +268,13 @@ function renderProcesses(processes) {
 
 function processRow(process) {
   const el = row(`${process.name} #${process.id}`, `${process.cpuSeconds}s CPU / ${process.memoryMB} MB`);
+  el.classList.add("action-row");
   const stop = document.createElement("button");
   stop.type = "button";
   stop.className = "row-action danger";
   stop.textContent = "Stop";
+  stop.dataset.action = "stop-process";
+  stop.dataset.pid = String(process.id);
   stop.addEventListener("click", () => stopProcess(process.id));
   el.append(stop);
   return el;
@@ -271,6 +285,19 @@ function row(label, value) {
   el.className = "row";
   el.innerHTML = `<strong>${escapeHtml(label)}</strong><span class="value">${escapeHtml(value)}</span>`;
   return el;
+}
+
+function formatFreshness(data) {
+  const pieces = [`Updated ${formatTime(data.collectedAt)}`];
+  const cache = data.dashboard && data.dashboard.cache;
+  if (cache && cache.state) {
+    const age = Math.round(Number(cache.ageMs || 0) / 1000);
+    pieces.push(cache.state === "fresh" ? "fresh" : `${cache.state} ${age}s`);
+  }
+  if (data.dashboard && data.dashboard.slowCollectedAt) {
+    pieces.push(`deep ${formatTime(data.dashboard.slowCollectedAt)}`);
+  }
+  return pieces.join(" · ");
 }
 
 function empty(text) {
@@ -317,4 +344,4 @@ function clamp(value, min, max) {
 refresh();
 state.timer = setInterval(() => {
   if (!state.paused) refresh();
-}, 3500);
+}, 1000);

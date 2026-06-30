@@ -312,11 +312,15 @@ h2 {
 
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   border-bottom: 1px solid #eef1f4;
   padding: 8px 0;
+}
+
+.row.action-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .row:last-child {

@@ -206,7 +206,7 @@ winver logs latest
 winver dashboard --open
 ```
 
-This starts a local Mac-only page, usually at `http://127.0.0.1:8787`, with live CPU, memory, thermal sensors, services, worker processes, and recent jobs. It polls through the same secure SSH/Tailscale path as the CLI.
+This starts a local Mac-only page, usually at `http://127.0.0.1:8787`, with live CPU, memory, thermal sensors, services, worker processes, and recent jobs. The page updates about once a second, while the Mac reuses a short-lived cache so every screen tick does not launch a full Surface scan. Slower details such as thermal zones, service state, process lists, and jobs are cached briefly on the Surface to avoid repeated CPU spikes.
 
 The task list is active: click `Logs` to read a job tail, or `Pull` to save that job's zipped log folder into `./winver-pulls` on the Mac. Finished training outputs still belong under `WINVER_RUNS`; pull those with `winver job pull runs <folder>`.
 
