@@ -353,7 +353,7 @@ function Apply-CoolingProfile {
 
   switch ($CoolingProfile) {
     'max' {
-      $results += Invoke-WinverPowercfg -Name 'high performance scheme' -Arguments @('/setactive', 'SCHEME_MAX') -AllowFailure
+      $results += Invoke-WinverPowercfg -Name 'high performance scheme' -Arguments @('/setactive', 'SCHEME_MIN') -AllowFailure
       $results += Invoke-WinverPowercfg -Name 'disable AC standby' -Arguments @('/change', 'standby-timeout-ac', '0') -AllowFailure
       $results += Invoke-WinverPowercfg -Name 'disable AC hibernate timeout' -Arguments @('/change', 'hibernate-timeout-ac', '0') -AllowFailure
       $results += Invoke-WinverPowercfg -Name 'fast display timeout' -Arguments @('/change', 'monitor-timeout-ac', '1') -AllowFailure
@@ -417,7 +417,7 @@ function Apply-ServerProfile {
   powercfg /change monitor-timeout-ac 5 | Out-Null
   powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP RTCWAKE 1 | Out-Null
   powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0 | Out-Null
-  powercfg /setactive SCHEME_MAX | Out-Null
+  powercfg /setactive SCHEME_MIN | Out-Null
 
   Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue
   Start-Service -Name sshd -ErrorAction SilentlyContinue
@@ -446,7 +446,7 @@ function Apply-Lockdown {
   Assert-BitLockerPrepared
   $paths = New-WinverSnapshot -Reason 'lockdown'
 
-  powercfg /setactive SCHEME_MAX | Out-Null
+  powercfg /setactive SCHEME_MIN | Out-Null
   powercfg /change standby-timeout-ac 0 | Out-Null
   powercfg /change hibernate-timeout-ac 0 | Out-Null
   powercfg /change monitor-timeout-ac 1 | Out-Null
