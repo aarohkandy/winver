@@ -76,7 +76,7 @@ def main() -> None:
     try:
         import torch
         from datasets import load_dataset
-        from peft import LoraConfig
+        from peft import LoraConfig, prepare_model_for_kbit_training
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, set_seed
         from transformers.trainer_utils import get_last_checkpoint
         from trl import SFTConfig, SFTTrainer
@@ -146,6 +146,10 @@ def main() -> None:
 
     if hasattr(model, "gradient_checkpointing_enable") and has_cuda:
         model.gradient_checkpointing_enable()
+    if use_4bit:
+        if hasattr(model, "config"):
+            model.config.use_cache = False
+        model = prepare_model_for_kbit_training(model)
 
     train_dataset = load_dataset("json", data_files=str(train_path), split="train")
     eval_dataset = load_dataset("json", data_files=str(val_path), split="train")

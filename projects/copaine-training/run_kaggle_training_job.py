@@ -483,7 +483,7 @@ def apply_chat_template(tokenizer, messages: list[dict], disable_thinking: bool)
 def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
     import torch
     from datasets import load_dataset
-    from peft import LoraConfig
+    from peft import LoraConfig, prepare_model_for_kbit_training
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, set_seed
     from trl import SFTConfig, SFTTrainer
 
@@ -517,6 +517,9 @@ def train_adapter(config: dict, dataset_dir: Path, output_dir: Path):
 
     if hasattr(model, "gradient_checkpointing_enable"):
         model.gradient_checkpointing_enable()
+    if hasattr(model, "config"):
+        model.config.use_cache = False
+    model = prepare_model_for_kbit_training(model)
 
     train_dataset = load_dataset("json", data_files=str(dataset_dir / "train_mixed.jsonl"), split="train")
     eval_dataset = load_dataset("json", data_files=str(dataset_dir / "val_mixed.jsonl"), split="train")
