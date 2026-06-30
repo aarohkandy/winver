@@ -142,8 +142,14 @@ function Start-KaggleTraining {
   $KernelRef = [string]$Summary.kernel_ref
 
   Write-Step 'Upload Kaggle dataset'
-  $CreateOutput = & $Kaggle.Source datasets create -p $DatasetBundleDir --dir-mode zip 2>&1
-  $CreateExit = $LASTEXITCODE
+  $PreviousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $CreateOutput = & $Kaggle.Source datasets create -p $DatasetBundleDir --dir-mode zip 2>&1
+    $CreateExit = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $PreviousErrorActionPreference
+  }
   $CreateText = ($CreateOutput | Out-String).Trim()
   if ($CreateText) { Write-Output $CreateText }
   if ($CreateExit -ne 0) {
