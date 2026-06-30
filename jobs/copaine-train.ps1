@@ -120,6 +120,7 @@ function Start-KaggleTraining {
   $Python = Get-Command python -ErrorAction Stop
   $Owner = Get-KaggleOwner
   $BundleDir = Join-Path $RunRoot "kaggle_bundle_$TrainingPreset-$RunStamp"
+  $DatasetSlug = if ($TrainingPreset -eq 'empathy') { 'support-bot-style-pack-empathy' } else { 'support-bot-style-pack' }
 
   Write-Step 'Prepare Kaggle bundle'
   New-Item -ItemType Directory -Force -Path $RunRoot | Out-Null
@@ -128,7 +129,7 @@ function Start-KaggleTraining {
     '--training-dir', $DatasetPath,
     '--bundle-dir', $BundleDir,
     '--owner-slug', $Owner,
-    '--dataset-slug', 'support-bot-style-pack',
+    '--dataset-slug', $DatasetSlug,
     '--preset', $TrainingPreset
   ) 'prepare_kaggle_bundle.py'
 

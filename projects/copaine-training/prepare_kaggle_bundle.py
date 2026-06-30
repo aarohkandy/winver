@@ -106,8 +106,9 @@ def main() -> None:
     kernel_slug = args.kernel_slug or preset.kernel_slug
     kernel_ref = f"{args.owner_slug}/{kernel_slug}"
 
+    dataset_title = "Support Bot Style Pack" if preset.key != "empathy" else "Support Bot Style Pack - Empathy"
     dataset_metadata = {
-        "title": "Support Bot Style Pack",
+        "title": dataset_title,
         "subtitle": f"Private sanitized LoRA pack for the {preset.label.lower()} model preset",
         "description": (
             "Private sanitized training pack for a local-style support bot experiment. "
