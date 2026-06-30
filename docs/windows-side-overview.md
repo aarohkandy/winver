@@ -83,13 +83,25 @@ That setup script is expected to:
 
 ## Optional Deep Admin Setup
 
-Deep admin actions use a separate admin signing key. If that feature is wanted, generate the admin key on the Mac and pass its public/setup value during Windows setup:
+Deep admin actions use a separate admin signing key. This is required for dashboard cooling buttons and other signed admin actions. If the Mac dashboard says:
+
+```text
+Cooling controls need one Windows setup step first: run the elevated init-admin command on the Surface. Logs, Pull, Refresh, and Stop still work.
+```
+
+ask the Mac side for the admin setup command. On the Mac, `./mac/setup-admin-key.sh` prints the exact command. On Windows, run the printed command from an elevated PowerShell window inside the repo:
+
+```powershell
+.\windows\admin\init-admin.ps1 -AdminKey "PASTE_THE_ADMIN_KEY_FROM_MAC"
+```
+
+If doing first setup again, the key can also be passed directly to `windows\setup.ps1`:
 
 ```powershell
 .\windows\setup.ps1 -MacPublicKey "PASTE_THE_MAC_PUBLIC_KEY" -AdminKey "PASTE_THE_ADMIN_KEY"
 ```
 
-The admin signing key should not be committed.
+The admin signing key should not be committed or pasted into public logs.
 
 ## Local Command Notes
 

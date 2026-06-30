@@ -10,6 +10,14 @@ Deep Control Mode gives `winver` more control without making every remote login 
 
 ## First-time admin setup
 
+The dashboard cooling buttons need this setup. If the localhost page says:
+
+```text
+Cooling controls need one Windows setup step first: run the elevated init-admin command on the Surface. Logs, Pull, Refresh, and Stop still work.
+```
+
+run the steps below. Logs, Pull, Refresh, and Stop do not need the admin key; only signed admin actions such as cooling, lockdown, unlock, reboot, and shutdown do.
+
 On the Mac:
 
 ```sh
@@ -22,7 +30,7 @@ On the Surface, in an elevated PowerShell window:
 .\windows\admin\init-admin.ps1 -AdminKey "PASTE_THE_KEY_FROM_THE_MAC"
 ```
 
-You can also pass `-AdminKey` to `windows\setup.ps1` during first setup.
+The Mac helper prints the exact command with the real key. Do not commit or paste that real key into GitHub. You can also pass `-AdminKey` to `windows\setup.ps1` during first setup.
 
 ## Commands
 

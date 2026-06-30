@@ -212,6 +212,26 @@ The task list is active: click `Logs` to read a job tail, or `Pull` to save that
 
 The localhost dashboard also has basic controls: cooling profile buttons and `Stop` buttons for running jobs / worker-ish processes (`powershell`, `pwsh`, `node`, `codex`, `python`). Cooling profile changes still use the signed admin broker; stop buttons are allowlisted and do not run arbitrary commands.
 
+If a cooling button says:
+
+```text
+Cooling controls need one Windows setup step first: run the elevated init-admin command on the Surface. Logs, Pull, Refresh, and Stop still work.
+```
+
+that means the Mac has a signing key, but Windows has not been initialized to trust it yet. On the Mac, run this to print the exact Windows command:
+
+```sh
+./mac/setup-admin-key.sh
+```
+
+Then on the Surface, open PowerShell as Administrator inside the repo and run the printed command. It will look like:
+
+```powershell
+.\windows\admin\init-admin.ps1 -AdminKey "PASTE_THE_KEY_FROM_THE_MAC"
+```
+
+Do not put the real key in GitHub or chat logs. After that one-time step, the dashboard cooling buttons can apply signed cooling profiles.
+
 To keep the localhost dashboard alive in the background on the Mac:
 
 ```sh
