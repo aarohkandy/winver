@@ -210,6 +210,14 @@ This starts a local Mac-only page, usually at `http://127.0.0.1:8787`, with live
 
 The task list is active: click `Logs` to read a job tail, or `Pull` to save that job's zipped log folder into `./winver-pulls` on the Mac. Finished training outputs still belong under `WINVER_RUNS`; pull those with `winver job pull runs <folder>`.
 
+To keep the localhost dashboard alive in the background on the Mac:
+
+```sh
+./mac/dashboard-watch.sh start
+```
+
+This starts a small watcher that restarts the local dashboard if it exits. Stop it with `./mac/dashboard-watch.sh stop`.
+
 ### Server-style controls
 
 ```sh
