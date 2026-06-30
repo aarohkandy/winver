@@ -2,7 +2,8 @@ const state = {
   paused: false,
   selectedJob: null,
   timer: null,
-  refreshing: false
+  refreshing: false,
+  pendingForceRefresh: false
 };
 
 const els = {
@@ -41,10 +42,15 @@ document.querySelectorAll("[data-control='cooling']").forEach((button) => {
 });
 
 async function refresh(options = {}) {
-  if (state.refreshing) return;
+  if (state.refreshing) {
+    if (options.force) state.pendingForceRefresh = true;
+    return;
+  }
   state.refreshing = true;
+  const force = options.force || state.pendingForceRefresh;
+  state.pendingForceRefresh = false;
   try {
-    const suffix = options.force ? "?force=1" : "";
+    const suffix = force ? "?force=1" : "";
     const response = await fetch(`/api/snapshot${suffix}`, { cache: "no-store" });
     const payload = await response.json();
     if (!payload.ok) throw new Error(payload.error || "Surface unavailable");
@@ -55,6 +61,9 @@ async function refresh(options = {}) {
     els.lastUpdated.textContent = error.message;
   } finally {
     state.refreshing = false;
+    if (state.pendingForceRefresh) {
+      refresh({ force: true });
+    }
   }
 }
 
