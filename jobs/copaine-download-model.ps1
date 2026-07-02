@@ -86,7 +86,7 @@ foreach ($File in $Files) {
 
   Write-Step "Download $File"
   $UrlFile = [System.Uri]::EscapeDataString($File).Replace('%2F', '/')
-  $Url = "https://huggingface.co/$Repo/resolve/main/$UrlFile?download=true"
+  $Url = "https://huggingface.co/$Repo/resolve/main/${UrlFile}?download=true"
   Invoke-CurlDownload -Url $Url -OutputPath $Out
 }
 
