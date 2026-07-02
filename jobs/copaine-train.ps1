@@ -27,7 +27,10 @@ param(
   [int]$DebugLimit = 0,
 
   [Parameter(Position = 7)]
-  [string]$No4Bit = ''
+  [string]$No4Bit = '',
+
+  [Parameter(Position = 8)]
+  [string]$ModelDir = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -97,6 +100,7 @@ if (-not $env:WINVER_DATA -or -not $env:WINVER_RUNS -or -not $env:WINVER_LOGS) {
 $ProjectRoot = Join-Path $env:WINVER_REPO 'projects\copaine-training'
 $DefaultDatasetDir = Join-Path $env:WINVER_DATA 'copaine\training_assets_kaggle_human_plus_topical'
 $DownloadsDatasetDir = 'C:\Users\arvin\Downloads\copaine\training_assets_kaggle_human_plus_topical'
+$DefaultEmpathyModelDir = Join-Path $env:WINVER_DATA 'copaine\models\empathetic-qwen3-8b-Jan'
 if (-not $DatasetDir) {
   $DatasetDir = $DefaultDatasetDir
 }
@@ -205,6 +209,7 @@ Write-Output "preset=$Preset"
 Write-Output "mode=$Mode"
 Write-Output "hardware=$Hardware"
 Write-Output "setup_mode=$SetupMode"
+Write-Output "model_dir=$ModelDir"
 
 $env:HF_HUB_DISABLE_XET = '1'
 $env:HF_HUB_DISABLE_TELEMETRY = '1'
@@ -303,8 +308,31 @@ try {
 
   Require-File $VenvPython
 
+  if (-not $ModelDir -and $Preset -eq 'empathy' -and (Test-Path -LiteralPath (Join-Path $DefaultEmpathyModelDir 'model.safetensors.index.json') -PathType Leaf)) {
+    $ModelDir = $DefaultEmpathyModelDir
+    Write-Output "using_default_model_dir=$ModelDir"
+  }
+
+  if ($ModelDir) {
+    Write-Step 'Local model directory check'
+    Require-Directory $ModelDir
+    @(
+      'config.json',
+      'tokenizer_config.json',
+      'tokenizer.json',
+      'model.safetensors.index.json',
+      'model-00001-of-00004.safetensors',
+      'model-00002-of-00004.safetensors',
+      'model-00003-of-00004.safetensors',
+      'model-00004-of-00004.safetensors'
+    ) | ForEach-Object { Require-File (Join-Path $ModelDir $_) }
+    Write-Output "model_dir=$ModelDir"
+  }
+
   Write-Step 'Python dependency and CUDA check'
-  $CudaJson = & $VenvPython -c @'
+  New-Item -ItemType Directory -Force -Path $RunRoot | Out-Null
+  $DependencyCheck = Join-Path $RunRoot "dependency-check-$RunStamp.py"
+@'
 import json
 import importlib.util
 
@@ -321,7 +349,8 @@ if not missing:
         "bf16_supported": bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported()),
     })
 print(json.dumps(payload))
-'@
+'@ | Set-Content -LiteralPath $DependencyCheck -Encoding UTF8
+  $CudaJson = & $VenvPython $DependencyCheck
   Write-Output $CudaJson
   $Cuda = $CudaJson | ConvertFrom-Json
   if ($Cuda.missing.Count -gt 0) {
@@ -356,6 +385,10 @@ print(json.dumps(payload))
     '--report-to', 'tensorboard'
   )
 
+  if ($ModelDir) {
+    $TrainArgs += '--model-id'
+    $TrainArgs += $ModelDir
+  }
   if ($AllowCpu) { $TrainArgs += '--allow-cpu' }
   if ($No4BitEnabled) { $TrainArgs += '--no-4bit' }
   if ($DebugLimit -gt 0) {
