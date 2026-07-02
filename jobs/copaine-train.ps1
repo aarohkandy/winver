@@ -26,7 +26,8 @@ param(
   [Parameter(Position = 6)]
   [int]$DebugLimit = 0,
 
-  [switch]$No4Bit
+  [Parameter(Position = 7)]
+  [string]$No4Bit = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,6 +36,7 @@ $ErrorActionPreference = 'Stop'
 $PreflightOnly = $Mode -eq 'preflight'
 $AllowCpu = $Hardware -eq 'allow-cpu'
 $Setup = $SetupMode -eq 'setup'
+$No4BitEnabled = $No4Bit -match '^(1|true|yes|no4bit|-No4Bit|--No4Bit)$'
 
 function Write-Step {
   param([string]$Message)
@@ -285,7 +287,9 @@ try {
 
   if ($Setup -or -not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
     Write-Step 'Install or refresh Python training environment'
-    $setupArgs = @('-ExecutionPolicy', 'Bypass', '-File', (Join-Path $ProjectRoot 'setup_local_gemma.ps1'), '-TorchBackend', 'cu121')
+    $TorchBackend = if ($AllowCpu -and -not $HasNvidiaGpu) { 'cpu' } else { 'cu121' }
+    Write-Output "torch_backend=$TorchBackend"
+    $setupArgs = @('-ExecutionPolicy', 'Bypass', '-File', (Join-Path $ProjectRoot 'setup_local_gemma.ps1'), '-TorchBackend', $TorchBackend)
     powershell.exe @setupArgs
   }
 
@@ -345,7 +349,7 @@ print(json.dumps(payload))
   )
 
   if ($AllowCpu) { $TrainArgs += '--allow-cpu' }
-  if ($No4Bit) { $TrainArgs += '--no-4bit' }
+  if ($No4BitEnabled) { $TrainArgs += '--no-4bit' }
   if ($DebugLimit -gt 0) {
     $TrainArgs += '--debug-limit'
     $TrainArgs += "$DebugLimit"
