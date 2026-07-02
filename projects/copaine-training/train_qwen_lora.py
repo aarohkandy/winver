@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 from pathlib import Path
 
 from model_presets import MODEL_LADDER, get_preset
@@ -31,11 +32,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lora-r", type=int)
     parser.add_argument("--lora-alpha", type=int)
     parser.add_argument("--lora-dropout", type=float)
+    parser.add_argument("--lora-target-modules", default="")
     parser.add_argument("--allow-cpu", action="store_true")
     parser.add_argument("--no-4bit", action="store_true")
     parser.add_argument("--debug-limit", type=int, default=0)
     parser.add_argument("--report-to", default="tensorboard")
     return parser.parse_args()
+
+
+def resolve_lora_target_modules(raw_value: str, preset_key: str) -> str | list[str]:
+    raw_value = raw_value.strip()
+    if raw_value:
+        if raw_value == "all-linear":
+            return raw_value
+        return [part.strip() for part in raw_value.split(",") if part.strip()]
+    if preset_key == "empathy":
+        return ["q_proj", "v_proj"]
+    return "all-linear"
 
 
 def apply_defaults(args: argparse.Namespace) -> argparse.Namespace:
@@ -54,8 +67,21 @@ def apply_defaults(args: argparse.Namespace) -> argparse.Namespace:
     args.lora_r = args.lora_r or preset.lora_r
     args.lora_alpha = args.lora_alpha or preset.lora_alpha
     args.lora_dropout = args.lora_dropout or preset.lora_dropout
+    args.lora_target_modules = resolve_lora_target_modules(args.lora_target_modules, preset.key)
     args.disable_thinking = preset.disable_thinking
     return args
+
+
+def log_stage(output_dir: Path, stage: str, **payload: object) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    event = {
+        "time": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "stage": stage,
+        **payload,
+    }
+    with (output_dir / "stage_events.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, sort_keys=True) + "\n")
+    print("STAGE " + json.dumps(event, sort_keys=True), flush=True)
 
 
 def apply_chat_template(tokenizer, messages: list[dict], disable_thinking: bool) -> str:
@@ -79,6 +105,7 @@ def main() -> None:
         from datasets import load_dataset
         from peft import LoraConfig, prepare_model_for_kbit_training
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, set_seed
+        from transformers import TrainerCallback
         from transformers.trainer_utils import get_last_checkpoint
         from trl import SFTConfig, SFTTrainer
     except ModuleNotFoundError as exc:
@@ -111,6 +138,14 @@ def main() -> None:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     resume_checkpoint = get_last_checkpoint(str(args.output_dir)) if args.output_dir.exists() else None
+    log_stage(
+        args.output_dir,
+        "run_start",
+        preset=args.preset,
+        model_id=str(args.model_id),
+        debug_limit=args.debug_limit,
+        lora_target_modules=args.lora_target_modules,
+    )
 
     has_cuda = torch.cuda.is_available()
     use_4bit = has_cuda and not args.no_4bit
@@ -132,9 +167,11 @@ def main() -> None:
         use_bf16 = False
         use_fp16 = False
 
+    log_stage(args.output_dir, "tokenizer_load_start")
     tokenizer = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=False)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    log_stage(args.output_dir, "tokenizer_load_done")
 
     model_kwargs = {
         "torch_dtype": compute_dtype,
@@ -158,7 +195,9 @@ def main() -> None:
     elif has_cuda:
         model_kwargs["device_map"] = "auto"
 
+    log_stage(args.output_dir, "model_load_start", dtype=str(compute_dtype), use_4bit=use_4bit)
     model = AutoModelForCausalLM.from_pretrained(args.model_id, **model_kwargs)
+    log_stage(args.output_dir, "model_load_done")
 
     if hasattr(model, "config"):
         model.config.use_cache = False
@@ -167,12 +206,15 @@ def main() -> None:
     if use_4bit:
         model = prepare_model_for_kbit_training(model)
 
+    log_stage(args.output_dir, "dataset_load_start")
     train_dataset = load_dataset("json", data_files=str(train_path), split="train")
     eval_dataset = load_dataset("json", data_files=str(val_path), split="train")
+    log_stage(args.output_dir, "dataset_load_done", train_examples=len(train_dataset), eval_examples=len(eval_dataset))
     if args.debug_limit > 0:
         train_dataset = train_dataset.select(range(min(args.debug_limit, len(train_dataset))))
         eval_cap = min(max(1, args.debug_limit // 8), len(eval_dataset))
         eval_dataset = eval_dataset.select(range(eval_cap))
+        log_stage(args.output_dir, "dataset_debug_limit", train_examples=len(train_dataset), eval_examples=len(eval_dataset))
 
     def to_prompt_completion(example: dict) -> dict:
         prompt = apply_chat_template(tokenizer, example["messages"], disable_thinking=args.disable_thinking)
@@ -181,15 +223,17 @@ def main() -> None:
             "completion": example["target"] + tokenizer.eos_token,
         }
 
+    log_stage(args.output_dir, "dataset_map_start")
     train_dataset = train_dataset.map(to_prompt_completion, remove_columns=train_dataset.column_names)
     eval_dataset = eval_dataset.map(to_prompt_completion, remove_columns=eval_dataset.column_names)
+    log_stage(args.output_dir, "dataset_map_done", train_examples=len(train_dataset), eval_examples=len(eval_dataset))
 
     peft_config = LoraConfig(
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
         bias="none",
-        target_modules="all-linear",
+        target_modules=args.lora_target_modules,
         task_type="CAUSAL_LM",
     )
 
@@ -220,6 +264,24 @@ def main() -> None:
         dataset_kwargs={"add_special_tokens": False},
     )
 
+    class StageCallback(TrainerCallback):
+        def on_train_begin(self, trainer_args, state, control, **kwargs):
+            log_stage(args.output_dir, "trainer_train_begin", max_steps=state.max_steps)
+
+        def on_log(self, trainer_args, state, control, logs=None, **kwargs):
+            clean_logs = {
+                key: float(value) if isinstance(value, (int, float)) else value
+                for key, value in (logs or {}).items()
+            }
+            log_stage(args.output_dir, "trainer_log", global_step=state.global_step, **clean_logs)
+
+        def on_save(self, trainer_args, state, control, **kwargs):
+            log_stage(args.output_dir, "trainer_save", global_step=state.global_step)
+
+        def on_train_end(self, trainer_args, state, control, **kwargs):
+            log_stage(args.output_dir, "trainer_train_end", global_step=state.global_step)
+
+    log_stage(args.output_dir, "trainer_build_start")
     trainer = SFTTrainer(
         model=model,
         args=training_args,
@@ -227,7 +289,9 @@ def main() -> None:
         eval_dataset=eval_dataset,
         processing_class=tokenizer,
         peft_config=peft_config,
+        callbacks=[StageCallback()],
     )
+    log_stage(args.output_dir, "trainer_build_done")
 
     run_metadata = {
         "preset": args.preset,
@@ -240,16 +304,27 @@ def main() -> None:
         "dtype": str(compute_dtype),
         "train_examples": len(train_dataset),
         "eval_examples": len(eval_dataset),
+        "debug_limit": args.debug_limit,
         "save_steps": args.save_steps,
         "eval_steps": args.eval_steps,
+        "max_length": args.max_length,
+        "gradient_accumulation_steps": args.gradient_accumulation_steps,
+        "lora_target_modules": args.lora_target_modules,
         "disable_thinking": args.disable_thinking,
         "resume_from_checkpoint": resume_checkpoint,
     }
     (args.output_dir / "run_metadata.json").write_text(json.dumps(run_metadata, indent=2) + "\n", encoding="utf-8")
 
-    trainer.train(resume_from_checkpoint=resume_checkpoint)
+    log_stage(args.output_dir, "trainer_train_call")
+    try:
+        trainer.train(resume_from_checkpoint=resume_checkpoint)
+    except BaseException as exc:
+        log_stage(args.output_dir, "trainer_train_exception", exception_type=type(exc).__name__, message=str(exc))
+        raise
+    log_stage(args.output_dir, "adapter_save_start")
     trainer.save_model(str(args.output_dir / "adapter"))
     tokenizer.save_pretrained(str(args.output_dir / "adapter"))
+    log_stage(args.output_dir, "adapter_save_done")
 
 
 if __name__ == "__main__":
