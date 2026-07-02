@@ -113,7 +113,7 @@ def main() -> None:
         use_bf16 = False
         use_fp16 = True
     else:
-        compute_dtype = torch.float32
+        compute_dtype = torch.bfloat16
         use_bf16 = False
         use_fp16 = False
 
@@ -124,6 +124,7 @@ def main() -> None:
     model_kwargs = {
         "torch_dtype": compute_dtype,
         "trust_remote_code": False,
+        "low_cpu_mem_usage": True,
     }
     if use_4bit:
         try:
@@ -144,11 +145,11 @@ def main() -> None:
 
     model = AutoModelForCausalLM.from_pretrained(args.model_id, **model_kwargs)
 
-    if hasattr(model, "gradient_checkpointing_enable") and has_cuda:
+    if hasattr(model, "config"):
+        model.config.use_cache = False
+    if hasattr(model, "gradient_checkpointing_enable"):
         model.gradient_checkpointing_enable()
     if use_4bit:
-        if hasattr(model, "config"):
-            model.config.use_cache = False
         model = prepare_model_for_kbit_training(model)
 
     train_dataset = load_dataset("json", data_files=str(train_path), split="train")
