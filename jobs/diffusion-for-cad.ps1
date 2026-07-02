@@ -24,6 +24,12 @@ param(
   [Parameter(Position = 6)]
   [int]$ScanLimit = 0,
 
+  [Parameter(Position = 7)]
+  [int]$Threads = 0,
+
+  [Parameter(Position = 8)]
+  [int]$Workers = 0,
+
   [string]$RepoUrl = 'git@github.com:aarohkandy/diffusion-for-cad.git'
 )
 
@@ -33,6 +39,15 @@ $ErrorActionPreference = 'Stop'
 $Setup = $SetupMode -eq 'setup'
 $AllowCpu = $Hardware -eq 'allow-cpu'
 $RealMode = $Mode -in @('download-fusion', 'cook')
+$ThreadCount = if ($Threads -gt 0) { $Threads } else { [Environment]::ProcessorCount }
+$ConversionWorkers = if ($Workers -gt 0) { $Workers } else { [Math]::Max(1, [Math]::Min($ThreadCount, 6)) }
+$env:OMP_NUM_THREADS = [string]$ThreadCount
+$env:MKL_NUM_THREADS = [string]$ThreadCount
+$env:OPENBLAS_NUM_THREADS = [string]$ThreadCount
+$env:NUMEXPR_NUM_THREADS = [string]$ThreadCount
+$env:VECLIB_MAXIMUM_THREADS = [string]$ThreadCount
+$env:TORCH_NUM_THREADS = [string]$ThreadCount
+$env:PYTHONUNBUFFERED = '1'
 
 function Write-Step {
   param([string]$Message)
@@ -91,10 +106,22 @@ function Expand-Zip-IfNeeded {
     Write-Output "extract_exists=$Destination"
     return
   }
+  if (Test-Path -LiteralPath $Destination -PathType Container) {
+    Write-Output "remove_partial_extract=$Destination"
+    Remove-Item -LiteralPath $Destination -Recurse -Force
+  }
   New-Item -ItemType Directory -Force -Path $Destination | Out-Null
   Write-Output "extract_zip=$ZipPath"
   Write-Output "extract_to=$Destination"
-  Expand-Archive -LiteralPath $ZipPath -DestinationPath $Destination -Force
+  $Tar = Get-Command tar.exe -ErrorAction SilentlyContinue
+  if ($Tar) {
+    Write-Output "extract_method=tar.exe"
+    & $Tar.Source -xf $ZipPath -C $Destination
+    if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  } else {
+    Write-Output "extract_method=Expand-Archive"
+    Expand-Archive -LiteralPath $ZipPath -DestinationPath $Destination -Force
+  }
   Set-Content -LiteralPath $Marker -Encoding UTF8 -Value (Get-Date -Format o)
 }
 
@@ -134,6 +161,8 @@ Write-Output "real_data=$RealMode"
 Write-Output "sample_limit=$Limit"
 Write-Output "epochs=$Epochs"
 Write-Output "scan_limit=$ScanLimit"
+Write-Output "torch_threads=$ThreadCount"
+Write-Output "conversion_workers=$ConversionWorkers"
 
 Write-Step 'Clone or update diffusion-for-cad repo'
 Require-File $DeployKey
@@ -331,32 +360,42 @@ processed_dir: ${CAD_NATIVE_DATA_ROOT}/processed/train
 max_faces: 32
 max_edges: 96
 latent_dim: 256
-hidden_dim: 1024
-batch_size: 32
+hidden_dim: 2048
+batch_size: 128
 epochs: __EPOCHS__
 lr: 0.0005
 seed: 7
 device: auto
+num_threads: __THREADS__
+interop_threads: 1
+cache_vectors: true
+data_workers: 0
 '@
   $AutoencoderYaml = $AutoencoderYaml.Replace('__EPOCHS__', [string]$Epochs)
+  $AutoencoderYaml = $AutoencoderYaml.Replace('__THREADS__', [string]$ThreadCount)
   Set-Content -LiteralPath $AutoencoderConfig -Encoding UTF8 -Value $AutoencoderYaml
 
   $DiffusionConfig = Join-Path $ConfigDir 'diffusion_fusion_real.yaml'
   $DiffusionYaml = @'
 processed_dir: ${CAD_NATIVE_DATA_ROOT}/processed/train
 autoencoder_checkpoint: ${CAD_NATIVE_RUNS_ROOT}/autoencoder/latest_checkpoint.txt
-hidden_dim: 1024
+hidden_dim: 2048
 time_dim: 128
 category_dim: 64
 category_conditioning: false
-batch_size: 32
+batch_size: 128
 epochs: __EPOCHS__
 lr: 0.0005
 diffusion_steps: 300
 seed: 13
 device: auto
+num_threads: __THREADS__
+interop_threads: 1
+cache_vectors: true
+data_workers: 0
 '@
   $DiffusionYaml = $DiffusionYaml.Replace('__EPOCHS__', [string]$Epochs)
+  $DiffusionYaml = $DiffusionYaml.Replace('__THREADS__', [string]$ThreadCount)
   Set-Content -LiteralPath $DiffusionConfig -Encoding UTF8 -Value $DiffusionYaml
 
   Invoke-Checked 'Convert real Fusion STEP solids to CAD-native graph samples' $VenvPython @(
@@ -369,7 +408,9 @@ device: auto
     '--scan-limit', [string]$ScanLimit,
     '--max-faces', '32',
     '--max-edges', '96',
-    '--category', 'mechanical'
+    '--category', 'mechanical',
+    '--workers', [string]$ConversionWorkers,
+    '--progress-every', '25'
   )
 
   Invoke-Checked 'Validate real processed samples' $VenvPython @(
