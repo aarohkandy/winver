@@ -206,6 +206,14 @@ Write-Output "mode=$Mode"
 Write-Output "hardware=$Hardware"
 Write-Output "setup_mode=$SetupMode"
 
+$env:HF_HUB_DISABLE_XET = '1'
+$env:HF_HUB_DISABLE_TELEMETRY = '1'
+$env:TOKENIZERS_PARALLELISM = 'false'
+
+Write-Step 'Hugging Face download settings'
+Write-Output "HF_HUB_DISABLE_XET=$env:HF_HUB_DISABLE_XET"
+Write-Output "HF_HUB_DISABLE_TELEMETRY=$env:HF_HUB_DISABLE_TELEMETRY"
+
 Write-Step 'Use bundled Copaine training code'
 Require-Directory $ProjectRoot
 Push-Location $env:WINVER_REPO
@@ -308,7 +316,7 @@ if not missing:
         "torch": torch.__version__,
         "cuda_available": torch.cuda.is_available(),
         "cuda_device_count": torch.cuda.device_count(),
-        "cuda_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "",
+        "cuda_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
         "cuda_version": torch.version.cuda,
         "bf16_supported": bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported()),
     })
