@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from model_presets import MODEL_LADDER, get_preset
@@ -84,6 +85,20 @@ def main() -> None:
         raise SystemExit(
             "Missing training dependencies. Install transformers, datasets, peft, trl, accelerate, and bitsandbytes."
         ) from exc
+
+    requested_threads = int(os.environ.get("TORCH_NUM_THREADS") or "0")
+    if requested_threads > 0:
+        torch.set_num_threads(requested_threads)
+        torch.set_num_interop_threads(max(1, min(4, requested_threads // 2)))
+    print(
+        json.dumps(
+            {
+                "torch_num_threads": torch.get_num_threads(),
+                "torch_num_interop_threads": torch.get_num_interop_threads(),
+            }
+        ),
+        flush=True,
+    )
 
     set_seed(args.seed)
 

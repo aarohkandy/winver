@@ -219,6 +219,23 @@ Write-Step 'Hugging Face download settings'
 Write-Output "HF_HUB_DISABLE_XET=$env:HF_HUB_DISABLE_XET"
 Write-Output "HF_HUB_DISABLE_TELEMETRY=$env:HF_HUB_DISABLE_TELEMETRY"
 
+if ($AllowCpu) {
+  $CpuInfo = Get-CimInstance Win32_ComputerSystem
+  $CpuThreadCount = [math]::Max(1, [int]$CpuInfo.NumberOfLogicalProcessors)
+  $env:OMP_NUM_THREADS = "$CpuThreadCount"
+  $env:MKL_NUM_THREADS = "$CpuThreadCount"
+  $env:TORCH_NUM_THREADS = "$CpuThreadCount"
+  $env:NUMEXPR_NUM_THREADS = "$CpuThreadCount"
+  $env:OMP_DYNAMIC = 'FALSE'
+  $env:MKL_DYNAMIC = 'FALSE'
+
+  Write-Step 'CPU training thread settings'
+  Write-Output "logical_processors=$($CpuInfo.NumberOfLogicalProcessors)"
+  Write-Output "TORCH_NUM_THREADS=$env:TORCH_NUM_THREADS"
+  Write-Output "OMP_NUM_THREADS=$env:OMP_NUM_THREADS"
+  Write-Output "MKL_NUM_THREADS=$env:MKL_NUM_THREADS"
+}
+
 Write-Step 'Use bundled Copaine training code'
 Require-Directory $ProjectRoot
 Push-Location $env:WINVER_REPO
